@@ -27,6 +27,7 @@ setup(
             'hallway_follower = rover_bringup.hallway_follower:main',
             'start_button = rover_bringup.start_button:main',
             'drive_bridge = rover_bringup.drive_bridge:main',
+            'record_self_mask = rover_bringup.record_self_mask:main',
         ],
     },
 )

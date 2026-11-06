@@ -26,3 +26,6 @@ desktop.ini
 # compiled firmware test binary
 fwtest
 fwtest.exe
+
+# logs fetched with rover.ps1 getlog
+demo_*.log

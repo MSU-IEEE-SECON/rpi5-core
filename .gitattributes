@@ -1,0 +1,7 @@
+# Pi scripts must keep Linux line endings or bash chokes on them
+*.sh      text eol=lf
+*.service text eol=lf
+*.rules   text eol=lf
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.ps1     text eol=crlf

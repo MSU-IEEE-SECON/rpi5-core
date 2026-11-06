@@ -81,6 +81,7 @@ def main():
     closest = math.inf   # smallest gap between any wall/obstacle point and the rover's body
     states = {}
     stopped_at = None
+    prev_w, dw_sum, flips, last_sign = 0.0, 0.0, 0, 0
 
     for k in range(int(args.seconds / dt)):
         # (x, y, th) is the rover's CENTRE; the LiDAR sits at (laser_x, laser_y) on it
@@ -92,6 +93,13 @@ def main():
         pts = scan_to_xy(a, r, logic.p.min_range)
         d = logic.decide(pts)
         states[d.state] = states.get(d.state, 0) + 1
+        dw_sum += abs(d.angular - prev_w)
+        prev_w = d.angular
+        sgn = 0 if abs(d.angular) < 0.05 else (1 if d.angular > 0 else -1)
+        if sgn and last_sign and sgn != last_sign:
+            flips += 1
+        if sgn:
+            last_sign = sgn
         for px, py in pts:  # distance from each hit to the rover's rectangle
             bx, by = px + lx, py + ly
             dx = max(-args.back - bx, 0.0, bx - args.front)
@@ -114,6 +122,7 @@ def main():
     print(f"\ncourse={args.course} noise={args.noise} start_y={args.start_y} "
           f"start_yaw={args.start_yaw}")
     print(f"states={states}")
+    print(f"wiggle: steering reversals={flips}  total steering change={dw_sum:.1f} rad/s")
     print(f"closest approach to the rover's body: {closest:.2f} m "
           f"-> {'COLLISION' if hit else 'ok'}")
     print(f"stopped at x={stopped_at if stopped_at is None else round(stopped_at, 2)} "

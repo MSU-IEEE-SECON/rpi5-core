@@ -58,8 +58,12 @@ def hallway(left_y=0.8, right_y=-0.8, x0=-3, x1=6, left_gap=None):
 
 # The geometry tests below place the LiDAR at the rover's centre, with the
 # original distances, so they test the behaviour itself rather than our mount.
+# Single-scan tests check the geometry, so smoothing is switched off here
+# (instant steering + speed) and the older, stronger steering gains are used.
+# Smoothing has its own tests at the bottom.
 CENTRED = dict(laser_x=0.0, laser_y=0.0, stop_dist=0.30, slow_dist=1.0,
-               lookahead=1.2, steer_lookahead=0.8)
+               lookahead=1.2, steer_lookahead=0.8, kp_heading=1.5, max_turn=0.8,
+               turn_smoothing=1.0, accel=100.0, heading_deadband_deg=0.0)
 
 
 def centred(**kw):
@@ -166,3 +170,72 @@ def test_offset_lidar_still_centres_the_rover():
     # without the offset setting it would wrongly steer right (away from the closer wall)
     d0 = run(hallway(0.7, -0.9))
     assert d0.angular < -0.1
+
+
+# ---- smoothing (the "drunk driver" fixes) -----------------------------------
+
+def face(x, half=0.15):
+    """Flat face across the path at distance x."""
+    return [(x, -half, x, half)]
+
+
+
+def test_steering_is_smoothed_and_converges():
+    logic = HallwayLogic(Params())          # real defaults, smoothing on
+    seg = hallway(0.7, -0.9)                 # off-centre: wants to turn right
+    a, r = simulate(seg)
+    pts = scan_to_xy(a, r, logic.p.min_range)
+    raw = logic._decide_raw(pts).angular
+    ws = [logic.decide(pts).angular for _ in range(15)]
+    assert abs(ws[0]) < abs(raw)            # first step is only part-way
+    assert abs(ws[-1] - raw) < 0.02         # ...but it gets there
+    assert all(w <= 0.0 for w in ws)        # never swings the wrong way
+
+
+def test_one_bad_scan_barely_moves_the_steering():
+    logic = HallwayLogic(Params())
+    a, r = simulate(hallway(0.8, -0.8))
+    good = scan_to_xy(a, r, logic.p.min_range)
+    for _ in range(10):
+        logic.decide(good)
+    # one scan with a phantom object just right of centre
+    bad = good + [(0.6, -0.05 + 0.01 * i) for i in range(5)]
+    w = logic.decide(bad).angular
+    assert abs(w) < 0.25
+
+
+def test_small_heading_errors_are_ignored():
+    logic = HallwayLogic(Params())
+    d = logic._decide_raw(scan_to_xy(*simulate(hallway(0.81, -0.79)), logic.p.min_range))
+    assert d.angular == 0.0
+
+
+def test_speed_ramps_up_but_brakes_instantly():
+    logic = HallwayLogic(Params())
+    pts = scan_to_xy(*simulate(hallway(0.8, -0.8)), logic.p.min_range)
+    v1 = logic.decide(pts).linear
+    assert v1 <= logic.p.accel * logic.p.scan_dt + 1e-9
+    for _ in range(20):
+        v = logic.decide(pts).linear
+    assert abs(v - logic.p.cruise_speed) < 1e-6
+    wall = scan_to_xy(*simulate(hallway(0.8, -0.8) + face(0.25)), logic.p.min_range)
+    assert logic.decide(wall).linear == 0.0
+
+
+def test_stop_has_hysteresis():
+    logic = HallwayLogic(Params())
+    stop = logic.p.stop_dist
+    close = scan_to_xy(*simulate(hallway(0.8, -0.8) + face(stop - 0.02)), logic.p.min_range)
+    just_past = scan_to_xy(*simulate(hallway(0.8, -0.8) + face(stop + 0.04)), logic.p.min_range)
+    assert logic.decide(close).state in ('PIVOT', 'BLOCKED')
+    assert logic.decide(just_past).state in ('PIVOT', 'BLOCKED')   # still holding
+    fresh = HallwayLogic(Params())
+    assert fresh.decide(just_past).state not in ('PIVOT', 'BLOCKED')
+
+
+def test_speckles_are_dropped():
+    from rover_bringup.hallway_logic import drop_speckles
+    line = [(1.0, 0.01 * i) for i in range(20)]
+    lone = [(0.5, 0.0)]
+    out = drop_speckles(line[:10] + lone + line[10:], 3)
+    assert (0.5, 0.0) not in out and len(out) == 20

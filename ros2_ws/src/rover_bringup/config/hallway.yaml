@@ -8,14 +8,14 @@ hallway_follower:
   ros__parameters:
     cruise_speed: 0.15              # m/s, normal forward speed
     slow_speed: 0.06                # m/s, speed just before stop_dist
-    max_turn: 0.8                   # rad/s, angular speed limit
-    kp_heading: 1.5                 # (rad/s) per rad of heading error to the target
+    max_turn: 0.6                   # rad/s, angular speed limit
+    kp_heading: 1.0                 # (rad/s) per rad of heading error to the target
     pivot_turn: 0.5                 # rad/s, turn-in-place speed when stopped by an obstacle
     robot_half_width: 0.13          # m, half the rover's width (10 in wide rover)
     side_margin: 0.08               # m, extra clearance each side
-    lookahead: 1.2                  # m, how far ahead obstacles are considered
+    lookahead: 1.0                  # m, how far ahead obstacles are considered
     steer_lookahead: 0.8            # m, aim point distance (bigger = gentler steering)
-    slow_dist: 1.0                  # m, start slowing for things in the path
+    slow_dist: 0.8                  # m, start slowing for things in the path
     stop_dist: 0.3                  # m, stop forward motion inside this
     max_wall_dist: 1.5              # m, side readings beyond this = "no wall"
     wall_fit_x: 1.5                 # m, |x| window of points used to find the walls
@@ -35,6 +35,16 @@ hallway_follower:
     laser_x: 0.0                    # m, LiDAR position from the rover's centre: + = forward of centre
     laser_y: 0.0                    # m, LiDAR position from the rover's centre: + = LEFT of centre, - = right
     fov_deg: 180.0                  # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    # --- smoothing (added Nov 6 for the "drunk driver" wiggle) ---
+    turn_smoothing: 0.35            # 0..1, how fast steering follows a new decision (1.0 = instant, old behaviour)
+    heading_deadband_deg: 2.0       # deg, ignore heading errors smaller than this (stops micro-wiggle)
+    accel: 0.3                      # m/s^2, max speed-up rate (braking is always instant)
+    scan_dt: 0.1                    # s, time between scans (C1 = 10 Hz)
+    stop_release: 0.1               # m, once stopped, path must clear stop_dist by this much to go again
+    min_obstacle_pts: 3             # ignore lone single-point returns (1 = off)
+    # --- self mask: the rover's own body in the scan (record_self_mask) ---
+    self_mask_file: "~/rover/self_mask.json"
+    self_mask_margin: 0.03          # m, extra beyond the recorded body
     laser_yaw: 0.0                  # rad, if the LiDAR arrow doesn't face the rover's front
     scan_timeout_s: 0.5             # stop if no LiDAR data for this long
     start_enabled: false            # true = drive as soon as it starts (not recommended)

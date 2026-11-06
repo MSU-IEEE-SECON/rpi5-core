@@ -32,15 +32,15 @@ from dataclasses import dataclass, field
 class Params:
     cruise_speed: float = 0.15      # m/s, normal forward speed
     slow_speed: float = 0.06        # m/s, speed just before stop_dist
-    max_turn: float = 0.8           # rad/s, angular speed limit
-    kp_heading: float = 1.5         # (rad/s) per rad of heading error to the target
+    max_turn: float = 0.6           # rad/s, angular speed limit
+    kp_heading: float = 1.0         # (rad/s) per rad of heading error to the target
     pivot_turn: float = 0.5         # rad/s, turn-in-place speed when stopped by an obstacle
     robot_half_width: float = 0.13  # m, half the rover's width (10 in rover)
     side_margin: float = 0.08       # m, extra clearance each side
-    lookahead: float = 1.5          # m, how far ahead obstacles are considered
-    steer_lookahead: float = 1.0    # m, aim point distance (bigger = gentler steering)
-    slow_dist: float = 1.2          # m, start slowing for things in the path
-    stop_dist: float = 0.45         # m, stop forward motion inside this
+    lookahead: float = 1.0          # m, how far ahead obstacles are considered
+    steer_lookahead: float = 0.8    # m, aim point distance (bigger = gentler steering)
+    slow_dist: float = 0.8          # m, start slowing for things in the path
+    stop_dist: float = 0.30         # m, stop forward motion inside this
     max_wall_dist: float = 1.5      # m, side readings beyond this = "no wall"
     wall_fit_x: float = 1.5         # m, |x| window of points used to find the walls
     wall_tol: float = 0.04          # m, how far a point can be from a wall line and count
@@ -56,9 +56,16 @@ class Params:
     clear_scans_reset: int = 5      # scans with nothing between the walls before forgetting the chosen side
     hit_margin: float = 0.05        # m, clearance beyond robot_half_width that counts as "would hit"
     max_hall_yaw_deg: float = 40.0  # deg, never angle more than this across the hallway
-    laser_x: float = 0.254           # m, LiDAR position relative to the rover's centre: + = forward
-    laser_y: float = 0.025           # m, LiDAR position relative to the rover's centre: + = left
+    laser_x: float = 0.0             # m, LiDAR position relative to the rover's centre: + = forward
+    laser_y: float = 0.0             # m, LiDAR position relative to the rover's centre: + = left
     fov_deg: float = 180.0          # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    # --- smoothing (stops the 'drunk driver' wiggle) ---
+    turn_smoothing: float = 0.35    # 0..1, how fast steering follows a new decision (1 = instantly)
+    heading_deadband_deg: float = 2.0  # deg, ignore heading errors smaller than this
+    accel: float = 0.3              # m/s^2, max speed-up rate (slowing down is instant)
+    scan_dt: float = 0.1            # s, time between scans (C1 = 10 Hz)
+    stop_release: float = 0.10      # m, once stopped, path must be this much past stop_dist to go again
+    min_obstacle_pts: int = 3       # an obstacle must be at least this many points (drops single-point noise)
 
 
 @dataclass
@@ -79,12 +86,37 @@ def scan_to_xy(angles, ranges, min_range, max_range=12.0):
     return pts
 
 
+def drop_speckles(pts, min_pts, dist=0.06):
+    """Drop lone returns (dust, cable flicker, edge "mixed pixels").
+
+    pts are in scan order, so a real surface has neighbours right next to it in
+    the list. A point is kept if at least min_pts-1 of the 2 points either side
+    of it are within `dist`. min_pts <= 1 turns this off.
+    """
+    if min_pts <= 1 or len(pts) < 5:
+        return pts
+    need, d2, n, out = min_pts - 1, dist * dist, len(pts), []
+    for i, (x, y) in enumerate(pts):
+        k = 0
+        for j in (i - 2, i - 1, i + 1, i + 2):
+            if 0 <= j < n:
+                dx, dy = pts[j][0] - x, pts[j][1] - y
+                if dx * dx + dy * dy < d2:
+                    k += 1
+        if k >= need:
+            out.append((x, y))
+    return out
+
+
 class HallwayLogic:
 
     def __init__(self, params: Params = None):
         self.p = params or Params()
         self.last_side = 0  # +1 left, -1 right, 0 none
         self.clear_scans = 0
+        self.prev_w = 0.0      # last angular command (for smoothing)
+        self.prev_v = 0.0      # last linear command (for the accel limit)
+        self.stopped = False   # in PIVOT/BLOCKED last scan (for stop hysteresis)
         self._rng = random.Random(0)  # deterministic line fitting
 
     # -- steps 0-1: find the walls (robust line fit) -------------------------
@@ -224,12 +256,29 @@ class HallwayLogic:
         return [(x, y) for x, y in pts if abs(math.atan2(y, x)) <= half]
 
     def decide(self, pts) -> Decision:
+        """Raw decision + smoothing, so one odd scan can't jerk the wheels."""
+        p = self.p
+        d = self._decide_raw(pts)
+        self.stopped = d.state in ('PIVOT', 'BLOCKED')
+        a = max(0.0, min(1.0, p.turn_smoothing))
+        if d.state == 'NO_DATA' or (d.state == 'BLOCKED'):
+            w = 0.0
+        elif d.state == 'PIVOT':
+            w = d.angular  # pivots are deliberate, full rate
+        else:
+            w = self.prev_w + a * (d.angular - self.prev_w)
+        v = d.linear if d.linear <= self.prev_v else min(d.linear, self.prev_v + p.accel * p.scan_dt)
+        self.prev_w, self.prev_v = w, v
+        return Decision(v, w, d.state, d.info)
+
+    def _decide_raw(self, pts) -> Decision:
         p = self.p
         pts = self.in_fov(pts)  # field of view is about the LiDAR itself
         # From here on, work relative to the rover's CENTRE (not the LiDAR), so
         # centring, clearances and the path corridor are about the rover's body.
         if p.laser_x or p.laser_y:
             pts = [(x + p.laser_x, y + p.laser_y) for x, y in pts]
+        pts = drop_speckles(pts, p.min_obstacle_pts)
         if len(pts) < 20:
             return Decision(0.0, 0.0, 'NO_DATA', {'points': len(pts)})
 
@@ -262,6 +311,8 @@ class HallwayLogic:
         # relative to the hall is -phi; after turning by heading_err it'd be -phi + err.
         lim = math.radians(p.max_hall_yaw_deg)
         heading_err = max(-lim, min(lim, heading_err - phi)) + phi
+        db = math.radians(p.heading_deadband_deg)
+        heading_err = 0.0 if abs(heading_err) < db else heading_err - math.copysign(db, heading_err)
         angular = max(-p.max_turn, min(p.max_turn, p.kp_heading * heading_err))
 
         # don't swing into something that's right beside us
@@ -285,7 +336,9 @@ class HallwayLogic:
             if self.clear_scans >= p.clear_scans_reset:
                 self.last_side = 0
 
-        if front_hit <= p.stop_dist:
+        # hysteresis: once stopped, don't creep forward until clearly clear
+        stop_at = p.stop_dist + (p.stop_release if self.stopped else 0.0)
+        if front_hit <= stop_at:
             # something the body would hit: stop and turn in place toward the gap,
             # unless that would angle us past max_hall_yaw (then just wait: BLOCKED)
             yaw_rel_hall = -phi

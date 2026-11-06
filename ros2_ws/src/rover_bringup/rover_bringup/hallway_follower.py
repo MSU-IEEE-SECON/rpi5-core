@@ -14,7 +14,9 @@ Safety:
     arriving for more than scan_timeout_s (LiDAR unplugged, driver crashed...)
   * the motor driver should ALSO stop on its own if /cmd_vel goes quiet
 """
+import json
 import math
+import os
 
 import rclpy
 from geometry_msgs.msg import Twist
@@ -42,8 +44,11 @@ class HallwayFollower(Node):
         self.declare_parameter('scan_timeout_s', 0.5)
         self.declare_parameter('start_enabled', False)
         self.declare_parameter('log_period_s', 0.5)
+        self.declare_parameter('self_mask_file', '~/rover/self_mask.json')
+        self.declare_parameter('self_mask_margin', 0.03)  # m, extra beyond the recorded body
 
         self.logic = HallwayLogic(self._read_params())
+        self.mask_bin, self.mask = self._load_mask()
         self.enabled = bool(self.get_parameter('start_enabled').value)
         self.last_scan_time = None
         self.last_log = 0.0
@@ -85,8 +90,10 @@ class HallwayFollower(Node):
     def on_scan(self, msg: LaserScan):
         self.last_scan_time = self.get_clock().now()
         yaw = float(self.get_parameter('laser_yaw').value)
-        angles = [msg.angle_min + i * msg.angle_increment + yaw for i in range(len(msg.ranges))]
-        pts = scan_to_xy(angles, msg.ranges, self.logic.p.min_range, msg.range_max)
+        raw = [msg.angle_min + i * msg.angle_increment for i in range(len(msg.ranges))]
+        ranges = self._apply_mask(raw, msg.ranges)
+        angles = [a + yaw for a in raw]
+        pts = scan_to_xy(angles, ranges, self.logic.p.min_range, msg.range_max)
         d = self.logic.decide(pts)
 
         state = d.state if self.enabled else 'DISABLED'
@@ -111,6 +118,40 @@ class HallwayFollower(Node):
                 self.get_logger().warn('No /scan data: stopping')
                 self.last_state = 'NO_SCAN'
             self.state_pub.publish(String(data='NO_SCAN'))
+
+    # -- self mask (the rover's own body in the scan) -------------------------
+    def _load_mask(self):
+        path = os.path.expanduser(str(self.get_parameter('self_mask_file').value))
+        if not os.path.exists(path):
+            self.get_logger().warn(
+                f'No self mask at {path}. If the rover sees its own body, run: '
+                'ros2 run rover_bringup record_self_mask')
+            return 1.0, {}
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            bin_deg = float(data['bin_deg'])
+            mask = {int(b): float(r) for b, r in data['bins'].items()}
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().error(f'Could not read self mask {path}: {e}')
+            return 1.0, {}
+        self.get_logger().info(f'Self mask loaded: ignoring the rover body in {len(mask)} deg')
+        return bin_deg, mask
+
+    def _apply_mask(self, raw_angles, ranges):
+        """Drop returns that are the rover itself. Uses the LiDAR's own angles
+        (before laser_yaw), same as record_self_mask."""
+        if not self.mask:
+            return ranges
+        n = int(round(360.0 / self.mask_bin))
+        margin = float(self.get_parameter('self_mask_margin').value)
+        out = list(ranges)
+        for i, (a, r) in enumerate(zip(raw_angles, ranges)):
+            b = int(math.floor(math.degrees(a) % 360.0 / self.mask_bin)) % n
+            lim = max(self.mask.get((b + k) % n, -1.0) for k in (-1, 0, 1))
+            if lim > 0 and r <= lim + margin:
+                out[i] = math.inf
+        return out
 
     # -- helpers --------------------------------------------------------------
     def stop(self):

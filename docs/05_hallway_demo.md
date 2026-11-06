@@ -101,12 +101,42 @@ bash ~/rover/pi_setup/install_autostart.sh
 Now: power on → wait ~30 s for boot → connect the controller → press **Y**. Log afterwards with
 `journalctl -u rover-demo -f` when plugged back in.
 
+## Self mask: stop it seeing its own body (do this once)
+
+The LiDAR sees bits of the rover itself (mount, wires, chassis edge) a few cm
+away. Those look like obstacles right in front, so the rover swerves and stops at
+nothing. Record them once, with the rover in **open space, nothing within ~0.5 m**:
+
+```bash
+ros2 launch rover_bringup lidar.launch.py        # terminal 1 (or the demo, not driving)
+ros2 run rover_bringup record_self_mask          # terminal 2: ~3 s, saves ~/rover/self_mask.json
+```
+
+It prints the angles it found (e.g. `+20 .. +25 deg, up to 0.12 m`). Restart the
+demo; the follower logs `Self mask loaded`. Redo it if anything on the rover moves.
+
+## Smooth driving (added Nov 6)
+
+The first hallway tests looked like a "drunk driver": wiggling, swerving at
+nothing, stop-and-go. Besides the self mask, the logic now:
+- **smooths steering** (`turn_smoothing: 0.35`): one odd scan only nudges the wheels;
+- **ignores tiny heading errors** (`heading_deadband_deg: 2.0`);
+- **ramps speed up** (`accel: 0.3` m/s²) but always brakes instantly;
+- **stop hysteresis** (`stop_release: 0.1`): once stopped it waits until the path
+  is 10 cm clearer before moving again, so it doesn't stutter at the threshold;
+- **drops lone speckle points** (`min_obstacle_pts: 3`);
+- calmer defaults: `kp_heading 1.0`, `max_turn 0.6`, `lookahead 1.0`, `slow_dist 0.8`.
+
+In simulation the steering reverses direction ~60% less often (92 vs 232 reversals
+over 30 drives) with the same pass rate. Still too wiggly? Lower `turn_smoothing`
+(0.2) or `kp_heading` (0.7). Too sluggish to dodge? Raise them.
+
 ## Tuning
 
 **Field of view:** on our mount the rear half of the LiDAR is blocked by the robot,
 so the logic only uses the **front 180°** (`fov_deg: 180.0` in `config/hallway.yaml`;
 360 = everything). If the robot's own parts still show up at the sides, narrow it
-(e.g. 170) or tell Claude to add a "robot footprint" filter.
+(e.g. 170), and record the self mask (above).
 
 Settings live in `config/hallway.yaml` (all commented). Change live while
 running, e.g. `ros2 param set /hallway_follower cruise_speed 0.2`.
@@ -116,14 +146,13 @@ Try changes in the simulator first, on any computer with Python 3 (no ROS):
 ```bash
 cd ros2_ws/src/rover_bringup
 python3 -m pytest test/test_hallway_logic.py -q          # unit tests (pip install pytest)
-python3 test/sim_drive.py --course zigzag --noise 0.02   # full simulated drive
+python3 test/sim_drive.py --course zigzag --noise 0.02   # full simulated drive (prints a wiggle score)
 ```
 
 Courses: `default`, `zigzag`, `narrow`, `empty`, `doorways`. Also
 `--start-y 0.3 --start-yaw 25` to start off-centre and angled.
 
-**Measure our rover** and set `robot_half_width` (half its width, in metres).
-The default 0.15 assumes a 30 cm wide rover with the LiDAR in the middle.
+`robot_half_width: 0.13` = our 10 in wide rover.
 
 ## Known limitations (fine for a demo, worth knowing)
 - Tight squeezes: with very noisy readings it can graze a corner when the gap is

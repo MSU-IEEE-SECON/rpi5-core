@@ -132,6 +132,20 @@ or the hardware so the team can retrace it.
   Background runs need `PYTHONUNBUFFERED=1` or `demo.log` lags behind (added to the
   autostart service): `PYTHONUNBUFFERED=1 nohup ros2 launch rover_bringup demo.launch.py > ~/demo.log 2>&1 &`
 
+## 2026-11-06
+
+- Current code pushed to the team repo `rpi5-core` (branch `on-board`).
+- First hallway runs on the rover: much better, but jittery ("drunk driver": wiggles
+  left-right, swerves at nothing, stop-and-go, reacts 1 m+ early). The log showed
+  `front≈0.15` and `L/R` of 0.01–0.10 almost constantly, i.e. **the rover was seeing
+  its own body** and sat in PIVOT/BLOCKED, mostly pivoting right. There was also no
+  smoothing, so decisions flipped every scan (10 Hz).
+- Fixes: new `record_self_mask` tool + follower mask filter; steering smoothing,
+  heading deadband, speed ramp-up, stop hysteresis, speckle filter, calmer defaults
+  (see doc 05, "Smooth driving"). 20 unit tests pass. Simulator: 27/30 pass (same
+  3 hard cases as before: 25°-crooked starts with noise), steering reversals 232 → 92.
+- Code defaults in `hallway_logic.py` now match `hallway.yaml` (LiDAR offset 0).
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop
@@ -151,4 +165,5 @@ or the hardware so the team can retrace it.
 - [ ] Wheels-up test, calibrate (doc 06)
 - [x] Measure rover width → `robot_half_width: 0.13` (10 in)
 - [ ] Measure LiDAR offset from rover centre → `laser_x` / `laser_y` in `config/hallway.yaml`
-- [ ] Push project to GitHub, add teammate (`docs/TEAM_ACCESS.md`)
+- [x] Push project to GitHub (`rpi5-core`, branch `on-board`)
+- [ ] Record the self mask on the rover (`ros2 run rover_bringup record_self_mask`)
