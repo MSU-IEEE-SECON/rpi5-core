@@ -1,0 +1,28 @@
+# systemd service: start the hallway demo automatically when the Pi boots,
+# so the rover can run untethered: power on -> wait ~30 s -> press the button.
+#
+# Install (on the Pi):   bash ~/rover/pi_setup/install_autostart.sh
+# Remove:                sudo systemctl disable --now rover-demo
+# Live log:              journalctl -u rover-demo -f
+#
+# Leave this OFF until the motor driver is working and tested on blocks.
+
+[Unit]
+Description=Capstone rover hallway demo (LiDAR + hallway_follower + start button)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=rover
+Environment=ROS_DOMAIN_ID=42
+# give USB (LiDAR) a moment to enumerate after boot
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && source /home/rover/rover/ros2_ws/install/setup.bash && exec ros2 launch rover_bringup demo.launch.py'
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

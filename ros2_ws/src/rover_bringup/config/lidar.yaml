@@ -1,0 +1,15 @@
+# RPLIDAR driver settings (rplidar_ros / rplidar_node)
+# Set serial_baudrate to what tools/lidar_identify.py reports:
+#   115200  = A1 / A2M8
+#   256000  = A2M12 / A3 / S1
+#   460800  = C1
+#   1000000 = S2 / S3
+rplidar_node:
+  ros__parameters:
+    channel_type: serial
+    serial_port: /dev/rplidar
+    serial_baudrate: 460800      # RPLIDAR C1 (identified 2026-10-24)
+    frame_id: laser
+    inverted: true               # C1 test 2026-10-24: with false, left/right were mirrored
+    angle_compensate: true
+    scan_mode: ""                # empty = sensor default mode

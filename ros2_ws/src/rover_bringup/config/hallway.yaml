@@ -1,0 +1,34 @@
+# hallway_follower settings. Edit, then on the Pi:
+#   cd ~/rover/ros2_ws && colcon build --symlink-install && source install/setup.bash
+# Or change live while it runs:  ros2 param set /hallway_follower cruise_speed 0.2
+# Keep decimals on decimal values (write 1.0 not 1) or ROS rejects the type.
+#
+# These match the values tested in test/sim_drive.py. Start slow on the real rover.
+hallway_follower:
+  ros__parameters:
+    cruise_speed: 0.15              # m/s, normal forward speed
+    slow_speed: 0.06                # m/s, speed just before stop_dist
+    max_turn: 0.8                   # rad/s, angular speed limit
+    kp_heading: 1.5                 # (rad/s) per rad of heading error to the target
+    pivot_turn: 0.5                 # rad/s, turn-in-place speed when stopped by an obstacle
+    robot_half_width: 0.15          # m, half the rover's width
+    side_margin: 0.08               # m, extra clearance each side
+    lookahead: 1.2                  # m, how far ahead obstacles are considered
+    steer_lookahead: 0.8            # m, aim point distance (bigger = gentler steering)
+    slow_dist: 1.0                  # m, start slowing for things in the path
+    stop_dist: 0.3                  # m, stop forward motion inside this
+    max_wall_dist: 1.5              # m, side readings beyond this = "no wall"
+    wall_fit_x: 1.5                 # m, |x| window of points used to find the walls
+    wall_tol: 0.04                  # m, how far a point can be from a wall line and count
+    min_wall_span: 0.6              # m, a "wall" must be at least this long
+    ransac_iters: 60                # line-fit attempts per side per scan
+    behind_x: 0.2                   # m, things this far behind the LiDAR still count as "beside"
+    obstacle_band: 0.5              # m, obstacles within this of the nearest one are grouped
+    side_stop: 0.05                 # m, won't turn toward a side closer than robot_half_width + this
+    stick_bonus: 0.15               # m, preference for keeping the previously chosen side
+    width_bonus: 0.6                # preference for wider gaps (score -= this * gap width)
+    min_range: 0.06                 # m, ignore returns closer than this (C1 min ~0.05)
+    laser_yaw: 0.0                  # rad, if the LiDAR arrow doesn't face the rover's front
+    scan_timeout_s: 0.5             # stop if no LiDAR data for this long
+    start_enabled: false            # true = drive as soon as it starts (not recommended)
+    log_period_s: 0.5               # status line rate in the terminal
