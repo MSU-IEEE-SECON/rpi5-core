@@ -4,9 +4,9 @@
 |---|---|---|
 | Computer | Raspberry Pi 5 | Have it. Use the official 27 W USB-C PSU (weaker supplies brown out under load). |
 | Storage | microSD (≥32 GB, A2 preferred) | Ubuntu 24.04.5 LTS, hostname `rover`, user `rover` |
-| LiDAR | **Slamtec RPLIDAR C1**, 2D 360°, USB-C | Identified 2026-10-24 via `tools/lidar_identify.py`: 460800 baud, model byte 0x41, FW 1.02, HW rev 18, S/N A2CCE195C1E79ED6B5E29EF1261B4A73, health Good. Shows up as `/dev/rplidar` → `ttyUSB0`. |
+| LiDAR | **Slamtec RPLIDAR C1**, 2D 360°, USB-C | Identified 2026-10-24 via `tools/lidar_identify.py`: 460800 baud, model byte 0x41, FW 1.02, HW rev 18, S/N A2CCE195C1E79ED6B5E29EF1261B4A73, health Good. USB adapter: CP2102N, USB serial `de6e6c510964ef1197efe3a9c169b110` (pinned in `99-rplidar.rules`) → `/dev/rplidar`. |
 | Camera | TBD | For AprilTags |
-| Drive base | **ESP32** + 4 mecanum wheels, 2-wire motor driver channels, no encoders, Bluetooth controller (Bluepad32) | Pins + details in `firmware/WIRING.md`. Pi links to it over USB (`docs/06_drivetrain_link.md`). |
+| Drive base | **ESP32** + 4 mecanum wheels, 2-wire motor driver channels, no encoders, Bluetooth controller (Bluepad32) | USB-serial: Silicon Labs CP2102, USB serial `0001` (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`). Pins in `firmware/WIRING.md`; link in `docs/06_drivetrain_link.md`. |
 
 ## LiDAR: how to tell the model
 

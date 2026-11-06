@@ -34,6 +34,25 @@ arp -a
 Look under the `192.168.137.1` interface for a `192.168.137.x` entry with a
 *dynamic* type, then `ssh rover@192.168.137.x`.
 
+## Fixed address (set up 2026-10-24): `192.168.137.50`
+
+Each laptop's sharing hands the Pi a different `192.168.137.x`, so the Pi also
+has a permanent second address, **`192.168.137.50`**, which works from any
+Windows laptop using Internet Connection Sharing:
+
+```powershell
+ssh rover@192.168.137.50
+```
+
+It's set in `/etc/netplan/60-rover-fixed-ip.yaml` on the Pi (DHCP stays on too). To
+recreate it after a reflash:
+
+```bash
+printf 'network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: true\n      addresses: [192.168.137.50/24]\n' | sudo tee /etc/netplan/60-rover-fixed-ip.yaml
+sudo chmod 600 /etc/netplan/60-rover-fixed-ip.yaml
+sudo netplan apply
+```
+
 ## Troubleshooting
 - **Sharing checkbox greyed out / no address handed out:** untick sharing, OK,
   then tick it again. Rebooting the laptop also clears it up.

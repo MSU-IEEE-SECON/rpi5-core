@@ -89,6 +89,49 @@ or the hardware so the team can retrace it.
 - GitHub: repo `BoBoBoweenie/SECON_HELL` created; the Claude GitHub app couldn't get access
   from this session, so the push is pending.
 
+- Teammate's laptop gave the Pi a different IP. Added a fixed second address
+  `192.168.137.50` via `/etc/netplan/60-rover-fixed-ip.yaml` (instructions in doc 02).
+
+- **Port mix-up found & fixed:** with the ESP32 plugged in, both devices are Silicon Labs
+  (LiDAR adapter = CP2102N serial `de6e6c51…b110`, ESP32 = CP2102 serial `0001`, same
+  10c4:ea60 IDs) and `/dev/rplidar` pointed at the **ESP32**. Confirmed with
+  `lidar_identify.py` (only ttyUSB1 answered, C1 @ 460800). Pinned the udev rule to the
+  LiDAR's serial → `/dev/rplidar -> ttyUSB1`. Repo rule updated to match.
+
+- LiDAR mounted on the bot: rear half is blocked by the robot. Hallway logic now uses
+  only the **front 180°** (`fov_deg: 180.0`, new setting in `config/hallway.yaml`).
+  Tests added (clutter behind the LiDAR is ignored). With front-only vision the
+  simulator exposed 4 weaknesses, all fixed: (1) close obstacles out-voted walls in
+  the wall fit → score lines by length, not point count; (2) noise near walls
+  hijacked the "nearest obstacle" grouping → ignore points within 10 cm of a wall;
+  (3) rover flip-flopped sides around a centred obstacle → stay committed until the
+  hall is clear for 5 scans; (4) stopped for things only in the comfort margin →
+  separate "would hit" (5 cm) vs "slow down" (8 cm) margins, and cap the angle
+  across the hall at 40°. Result: 30/30 simulated drives pass at 0 and 2 cm noise.
+  At an extreme 3 cm noise: 10/15 pass, 4 stop early (safe), 1 grazes a corner on the
+  0.55 m-half-width "narrow" course. Real C1 readings were steady to ~1 cm.
+
+- Rover is **10 in wide** → `robot_half_width: 0.13`. LiDAR is **not centred** on the
+  rover → new `laser_x` / `laser_y` settings (LiDAR position from the rover's centre);
+  the logic now works relative to the rover's centre. Test added. With the narrower
+  rover: 27/30 simulated drives pass, 0 collisions; the 3 others stop early (safe) and
+  are all 25°-crooked starts with noise. Tried "remember hallway width" + "look further
+  for walls"; it made things worse (11 early stops), so it was reverted.
+
+- LiDAR is ~10 in **forward** of the rover's centre, ~1 in left → `laser_x: 0.254`,
+  `laser_y: 0.025`. Simulator now models the LiDAR offset and a rover body
+  (assumed ~22 in long: 0.30 m ahead of centre, 0.25 m behind, rover length still to measure)
+  and checks body clearance. Result: **13/30 fail, 6 with body collisions.** Cause: with a
+  forward LiDAR and front-180° view, the rover is blind beside its own body and the rear
+  swings into obstacles it has already passed while turning. Options under discussion:
+  move the LiDAR back/up, or avoid obstacles by **strafing** (mecanum) instead of turning.
+  These settings are NOT on the Pi yet (Pi still has the centred-LiDAR version).
+
+- ESP32 now runs `mecanum_auto` (confirmed: `S MANUAL 0 0 0 0` at 5 Hz over USB).
+  Opening the port restarts the ESP32 (connect the controller after the Pi connects).
+  Background runs need `PYTHONUNBUFFERED=1` or `demo.log` lags behind (added to the
+  autostart service): `PYTHONUNBUFFERED=1 nohup ros2 launch rover_bringup demo.launch.py > ~/demo.log 2>&1 &`
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop
@@ -104,6 +147,8 @@ or the hardware so the team can retrace it.
 - [ ] Dry-run `demo.launch.py` on the Pi (no motors)
 - [ ] Wire start button to GPIO17/GND and test
 - [x] Motor link written (ESP32 AUTO mode + drive_bridge)
-- [ ] Flash `mecanum_auto` to the ESP32, wheels-up test, calibrate (doc 06)
-- [ ] Measure rover width → `robot_half_width` in `config/hallway.yaml`
+- [x] Flash `mecanum_auto` to the ESP32
+- [ ] Wheels-up test, calibrate (doc 06)
+- [x] Measure rover width → `robot_half_width: 0.13` (10 in)
+- [ ] Measure LiDAR offset from rover centre → `laser_x` / `laser_y` in `config/hallway.yaml`
 - [ ] Push project to GitHub, add teammate (`docs/TEAM_ACCESS.md`)

@@ -63,6 +63,8 @@ class StartButton(Node):
             self.pub.publish(Bool(data=False))
             if self.led:
                 self.led.off()
+        except Exception:  # noqa: BLE001
+            pass
         finally:
             super().destroy_node()
 

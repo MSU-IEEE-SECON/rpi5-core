@@ -35,12 +35,12 @@ class Params:
     max_turn: float = 0.8           # rad/s, angular speed limit
     kp_heading: float = 1.5         # (rad/s) per rad of heading error to the target
     pivot_turn: float = 0.5         # rad/s, turn-in-place speed when stopped by an obstacle
-    robot_half_width: float = 0.15  # m, half the rover's width
+    robot_half_width: float = 0.13  # m, half the rover's width (10 in rover)
     side_margin: float = 0.08       # m, extra clearance each side
-    lookahead: float = 1.2          # m, how far ahead obstacles are considered
-    steer_lookahead: float = 0.8    # m, aim point distance (bigger = gentler steering)
-    slow_dist: float = 1.0          # m, start slowing for things in the path
-    stop_dist: float = 0.30         # m, stop forward motion inside this
+    lookahead: float = 1.5          # m, how far ahead obstacles are considered
+    steer_lookahead: float = 1.0    # m, aim point distance (bigger = gentler steering)
+    slow_dist: float = 1.2          # m, start slowing for things in the path
+    stop_dist: float = 0.45         # m, stop forward motion inside this
     max_wall_dist: float = 1.5      # m, side readings beyond this = "no wall"
     wall_fit_x: float = 1.5         # m, |x| window of points used to find the walls
     wall_tol: float = 0.04          # m, how far a point can be from a wall line and count
@@ -52,6 +52,13 @@ class Params:
     stick_bonus: float = 0.15       # m, preference for keeping the previously chosen side
     width_bonus: float = 0.6        # preference for wider gaps (score -= this * gap width)
     min_range: float = 0.06         # m, ignore returns closer than this (C1 min ~0.05)
+    wall_margin: float = 0.10       # m, points within this of a wall line count as wall, not obstacle
+    clear_scans_reset: int = 5      # scans with nothing between the walls before forgetting the chosen side
+    hit_margin: float = 0.05        # m, clearance beyond robot_half_width that counts as "would hit"
+    max_hall_yaw_deg: float = 40.0  # deg, never angle more than this across the hallway
+    laser_x: float = 0.254           # m, LiDAR position relative to the rover's centre: + = forward
+    laser_y: float = 0.025           # m, LiDAR position relative to the rover's centre: + = left
+    fov_deg: float = 180.0          # deg, use points within +-fov/2 of ahead (rear blocked by mount)
 
 
 @dataclass
@@ -77,14 +84,18 @@ class HallwayLogic:
     def __init__(self, params: Params = None):
         self.p = params or Params()
         self.last_side = 0  # +1 left, -1 right, 0 none
+        self.clear_scans = 0
         self._rng = random.Random(0)  # deterministic line fitting
 
     # -- steps 0-1: find the walls (robust line fit) -------------------------
     def fit_wall(self, side_pts):
         """RANSAC line fit y = m*x + b on one side's points.
 
-        Picks the line with the most inliers, so a long wall beats a short box
-        face. Returns (m, b, inliers) or None if no convincing wall.
+        Scores each candidate line by how LONG a stretch it covers (number of
+        5 cm bins along x that contain an inlier), not by raw point count. Close
+        objects produce many densely packed points, so counting points would let a
+        30 cm box face near the robot outvote a long wall further away.
+        Returns (m, b, inliers, coverage) or None if no convincing wall.
         """
         p = self.p
         n = len(side_pts)
@@ -92,7 +103,7 @@ class HallwayLogic:
             return None
         rng = self._rng
         max_m = math.tan(math.radians(50))
-        best = None
+        best, best_cov = None, 0
         for _ in range(p.ransac_iters):
             (x1, y1), (x2, y2) = side_pts[rng.randrange(n)], side_pts[rng.randrange(n)]
             if abs(x2 - x1) < 0.2:
@@ -103,8 +114,9 @@ class HallwayLogic:
             b = y1 - m * x1
             k = math.sqrt(1 + m * m)
             inl = [(x, y) for x, y in side_pts if abs(y - (m * x + b)) / k < p.wall_tol]
-            if best is None or len(inl) > len(best):
-                best = inl
+            cov = len({int(math.floor(x / 0.05)) for x, _ in inl})
+            if cov > best_cov:
+                best, best_cov = inl, cov
         if not best or len(best) < 8:
             return None
         xs = [x for x, _ in best]
@@ -115,7 +127,7 @@ class HallwayLogic:
         my = sum(y for _, y in best) / len(best)
         sxx = sum((x - mx) ** 2 for x in xs)
         m = sum((x - mx) * (y - my) for x, y in best) / sxx
-        return m, my - m * mx, best
+        return m, my - m * mx, best, best_cov
 
     def find_walls(self, pts):
         """Returns (phi, L, R, mode).
@@ -132,11 +144,11 @@ class HallwayLogic:
         fits = [f for f in (fl, fr) if f]
         if not fits:
             return 0.0, p.max_wall_dist, p.max_wall_dist, 'none'
-        tot = sum(len(f[2]) for f in fits)
-        phi = sum(math.atan(f[0]) * len(f[2]) for f in fits) / tot
+        tot = sum(f[3] for f in fits)
+        phi = sum(math.atan(f[0]) * f[3] for f in fits) / tot
 
         def dist(f, sign):
-            m, b, _ = f
+            m, b = f[0], f[1]
             # perpendicular distance from the robot (origin) to the line
             return min(p.max_wall_dist, abs(b) / math.sqrt(1 + m * m)) if sign * b > 0 else None
 
@@ -157,8 +169,9 @@ class HallwayLogic:
         when we get to them, instead of being flattened together with the near ones.
         """
         p = self.p
+        m = p.wall_margin  # points this close to a wall are the wall (or noise on it)
         ahead = [(x, y) for x, y in pts
-                 if 0.0 < x < p.lookahead and -R + 0.05 < y < L - 0.05]
+                 if 0.0 < x < p.lookahead and -R + m < y < L - m]
         if ahead:
             nearest = min(x for x, _ in ahead)
             ahead = [(x, y) for x, y in ahead if x < nearest + p.obstacle_band]
@@ -180,6 +193,12 @@ class HallwayLogic:
         return left, right
 
     def choose_gap(self, gaps):
+        # Once we've committed to passing an obstacle on one side, stay committed
+        # while that side still has a usable gap (prevents last-moment side flips).
+        if self.last_side:
+            same = [g for g in gaps if (0.5 * (g[0] + g[1])) * self.last_side > 0.05]
+            if same:
+                gaps = same
         best, best_score = None, None
         for lo, hi in gaps:
             c = 0.5 * (lo + hi)
@@ -192,14 +211,25 @@ class HallwayLogic:
         return best
 
     # -- steps 4-5 ------------------------------------------------------------
-    def path_distance(self, pts):
-        """Nearest x of anything directly in the robot's path."""
-        half = self.p.robot_half_width + self.p.side_margin
+    def path_distance(self, pts, half):
+        """Nearest x of anything ahead within +-half of the robot's centreline."""
         ahead = [x for x, y in pts if x > 0.0 and abs(y) <= half]
         return min(ahead) if ahead else math.inf
 
+    def in_fov(self, pts):
+        """Keep only points inside the usable field of view (front half by default)."""
+        if self.p.fov_deg >= 360.0:
+            return pts
+        half = math.radians(self.p.fov_deg / 2.0) + 1e-6
+        return [(x, y) for x, y in pts if abs(math.atan2(y, x)) <= half]
+
     def decide(self, pts) -> Decision:
         p = self.p
+        pts = self.in_fov(pts)  # field of view is about the LiDAR itself
+        # From here on, work relative to the rover's CENTRE (not the LiDAR), so
+        # centring, clearances and the path corridor are about the rover's body.
+        if p.laser_x or p.laser_y:
+            pts = [(x + p.laser_x, y + p.laser_y) for x, y in pts]
         if len(pts) < 20:
             return Decision(0.0, 0.0, 'NO_DATA', {'points': len(pts)})
 
@@ -210,12 +240,14 @@ class HallwayLogic:
         hpts = [(x * c + y * s, -x * s + y * c) for x, y in pts]
 
         gaps, n_inner = self.gaps(hpts, L, R)
-        front = self.path_distance(pts)          # robot frame: what's in our actual path
+        # robot frame: what's in our actual path. "soft" includes the comfort margin
+        # (slow down for it); "hit" is what the body would actually touch (stop for it).
+        front = self.path_distance(pts, p.robot_half_width + p.side_margin)
+        front_hit = self.path_distance(pts, p.robot_half_width + p.hit_margin)
         info = {'L': L, 'R': R, 'walls': wall_mode, 'front': front, 'gaps': len(gaps),
                 'hall_deg': math.degrees(phi)}
 
         if not gaps:
-            self.last_side = 0
             return Decision(0.0, 0.0, 'BLOCKED', info)
 
         lo, hi = self.choose_gap(gaps)
@@ -226,6 +258,10 @@ class HallwayLogic:
         ax, ay = p.steer_lookahead, target_y
         rx, ry = ax * c - ay * s, ax * s + ay * c
         heading_err = math.atan2(ry, rx)
+        # Keep the robot within +-max_hall_yaw of the hallway direction: robot yaw
+        # relative to the hall is -phi; after turning by heading_err it'd be -phi + err.
+        lim = math.radians(p.max_hall_yaw_deg)
+        heading_err = max(-lim, min(lim, heading_err - phi)) + phi
         angular = max(-p.max_turn, min(p.max_turn, p.kp_heading * heading_err))
 
         # don't swing into something that's right beside us
@@ -237,16 +273,27 @@ class HallwayLogic:
             angular = 0.0
 
         in_path = front < p.lookahead
-        if in_path and abs(target_y) > 0.05:
-            self.last_side = 1 if target_y > 0 else -1
-        elif not in_path:
-            self.last_side = 0
+        # Remember which side we're passing on until the hallway ahead has been
+        # clear for a few scans (not just until the obstacle leaves our straight-
+        # ahead corridor, which happens every time we angle away from it).
+        if n_inner:
+            self.clear_scans = 0
+            if self.last_side == 0 and abs(target_y) > 0.05:
+                self.last_side = 1 if target_y > 0 else -1
+        else:
+            self.clear_scans += 1
+            if self.clear_scans >= p.clear_scans_reset:
+                self.last_side = 0
 
-        if front <= p.stop_dist:
-            if abs(target_y) < 0.02:     # gap is dead ahead but something's in the way
-                return Decision(0.0, 0.0, 'BLOCKED', info)
+        if front_hit <= p.stop_dist:
+            # something the body would hit: stop and turn in place toward the gap,
+            # unless that would angle us past max_hall_yaw (then just wait: BLOCKED)
+            yaw_rel_hall = -phi
             turn = math.copysign(p.pivot_turn, target_y)
+            if abs(target_y) < 0.02 or (math.copysign(1, turn) * yaw_rel_hall >= lim):
+                return Decision(0.0, 0.0, 'BLOCKED', info)
             return Decision(0.0, turn, 'PIVOT', info)
+        front = max(front, p.stop_dist)  # only in the comfort margin: creep, don't stop
 
         if front >= p.slow_dist:
             linear = p.cruise_speed

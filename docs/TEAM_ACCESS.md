@@ -69,7 +69,8 @@ Only the laptop the Pi is cabled to can reach it.
 
 1. Plug the Pi's Ethernet into **your** laptop and set up Internet Connection
    Sharing: same steps as `docs/02_ethernet_to_pi.md`. One-time per laptop.
-2. `ssh rover@rover.local`. The password is shared in person / team chat,
+2. `ssh rover@192.168.137.50` (fixed address, works from any laptop) or
+   `ssh rover@rover.local`. The password is shared in person / team chat,
    **never in the repo**.
 3. Recommended: set up an SSH key so you don't need the password (PowerShell, once):
    ```powershell

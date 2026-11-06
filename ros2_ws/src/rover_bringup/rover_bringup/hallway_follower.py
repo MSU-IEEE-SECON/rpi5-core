@@ -132,6 +132,8 @@ class HallwayFollower(Node):
     def destroy_node(self):
         try:
             self.stop()
+        except Exception:  # noqa: BLE001  (ROS may already be shut down on Ctrl+C)
+            pass
         finally:
             super().destroy_node()
 

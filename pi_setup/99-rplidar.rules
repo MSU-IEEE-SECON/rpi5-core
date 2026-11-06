@@ -1,5 +1,6 @@
-# Slamtec RPLIDAR USB adapters (Silicon Labs CP210x) -> /dev/rplidar
-# Installed to /etc/udev/rules.d/ by bootstrap_ros2_jazzy.sh
-# Note: matches any CP210x. If another CP210x device is added to the rover,
-# narrow this with ATTRS{serial}=="..." (see: udevadm info -a -n /dev/ttyUSB0).
-KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", GROUP:="dialout", SYMLINK+="rplidar"
+# Slamtec RPLIDAR C1 USB adapter (Silicon Labs CP2102N) -> /dev/rplidar
+# Pinned to THIS adapter's USB serial number, because the ESP32 drivetrain board
+# also uses a Silicon Labs CP2102 (same 10c4:ea60 IDs) and would otherwise grab
+# /dev/rplidar. Installed to /etc/udev/rules.d/ by bootstrap_ros2_jazzy.sh.
+# New/replacement LiDAR? Run pi_setup/pin_lidar_port.sh with only the LiDAR plugged in.
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="de6e6c510964ef1197efe3a9c169b110", MODE:="0666", GROUP:="dialout", SYMLINK+="rplidar"

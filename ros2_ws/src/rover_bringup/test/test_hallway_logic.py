@@ -56,8 +56,18 @@ def hallway(left_y=0.8, right_y=-0.8, x0=-3, x1=6, left_gap=None):
     return segs
 
 
+# The geometry tests below place the LiDAR at the rover's centre, with the
+# original distances, so they test the behaviour itself rather than our mount.
+CENTRED = dict(laser_x=0.0, laser_y=0.0, stop_dist=0.30, slow_dist=1.0,
+               lookahead=1.2, steer_lookahead=0.8)
+
+
+def centred(**kw):
+    return Params(**{**CENTRED, **kw})
+
+
 def run(segments, logic=None):
-    logic = logic or HallwayLogic(Params())
+    logic = logic or HallwayLogic(centred())
     a, r = simulate(segments)
     return logic.decide(scan_to_xy(a, r, logic.p.min_range))
 
@@ -84,7 +94,7 @@ def test_obstacle_slightly_right_goes_left():
     d = run(hallway() + box(0.9, -0.1, 0.3, 0.3))
     assert d.state == 'AVOID'
     assert d.angular > 0.2
-    assert 0 < d.linear < Params().cruise_speed
+    assert 0 < d.linear < centred().cruise_speed
 
 
 def test_obstacle_slightly_left_goes_right():
@@ -94,7 +104,7 @@ def test_obstacle_slightly_left_goes_right():
 
 
 def test_obstacle_dead_centre_picks_a_side_and_sticks():
-    logic = HallwayLogic(Params())
+    logic = HallwayLogic(centred())
     first = run(hallway() + box(0.9, 0.0, 0.3, 0.3), logic)
     assert first.state == 'AVOID' and abs(first.angular) > 0.2
     # slightly favour the other side; hysteresis should keep the first choice
@@ -127,6 +137,32 @@ def test_doorway_on_left_does_not_veer():
 
 
 def test_no_data_stops():
-    logic = HallwayLogic(Params())
+    logic = HallwayLogic(centred())
     d = logic.decide([])
     assert d.state == 'NO_DATA' and d.linear == 0.0 and d.angular == 0.0
+
+
+def test_rear_half_is_ignored():
+    """Clutter behind the LiDAR (robot body on our mount) must not affect anything."""
+    clean = run(hallway(0.8, -0.8))
+    behind = run(hallway(0.8, -0.8) + box(-0.15, 0.0, 0.1, 0.3) + box(-0.4, 0.5, 0.2, 0.2))
+    assert behind.state == 'FOLLOW'
+    assert abs(behind.angular - clean.angular) < 0.05
+    assert abs(behind.linear - clean.linear) < 0.01
+
+
+def test_full_circle_option_still_works():
+    logic = HallwayLogic(centred(fov_deg=360.0))
+    d = run(hallway(0.8, -0.8), logic)
+    assert d.state == 'FOLLOW' and abs(d.angular) < 0.05
+
+
+def test_offset_lidar_still_centres_the_rover():
+    """LiDAR mounted 10 cm left of the rover's centre, rover itself centred:
+    the LiDAR sees the left wall 10 cm closer, but the rover should go straight."""
+    logic = HallwayLogic(centred(laser_y=0.10))
+    d = run(hallway(0.7, -0.9), logic)   # walls as seen from the LiDAR
+    assert d.state == 'FOLLOW' and abs(d.angular) < 0.05
+    # without the offset setting it would wrongly steer right (away from the closer wall)
+    d0 = run(hallway(0.7, -0.9))
+    assert d0.angular < -0.1

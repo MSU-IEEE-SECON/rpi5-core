@@ -103,6 +103,11 @@ Now: power on → wait ~30 s for boot → connect the controller → press **Y**
 
 ## Tuning
 
+**Field of view:** on our mount the rear half of the LiDAR is blocked by the robot,
+so the logic only uses the **front 180°** (`fov_deg: 180.0` in `config/hallway.yaml`;
+360 = everything). If the robot's own parts still show up at the sides, narrow it
+(e.g. 170) or tell Claude to add a "robot footprint" filter.
+
 Settings live in `config/hallway.yaml` (all commented). Change live while
 running, e.g. `ros2 param set /hallway_follower cruise_speed 0.2`.
 
@@ -121,6 +126,9 @@ Courses: `default`, `zigzag`, `narrow`, `empty`, `doorways`. Also
 The default 0.15 assumes a 30 cm wide rover with the LiDAR in the middle.
 
 ## Known limitations (fine for a demo, worth knowing)
+- Tight squeezes: with very noisy readings it can graze a corner when the gap is
+  only ~20 cm wider than the rover. Keep demo obstacles at least ~25 cm from walls.
+- Only sees the front 180°: it can't see things beside/behind its rear half.
 - Reactive only: no map. It handles what it sees within ~1.2 m.
 - Assumes the LiDAR sits near the rover's centre of rotation. A long rover may
   clip an obstacle's corner with its rear while turning back.

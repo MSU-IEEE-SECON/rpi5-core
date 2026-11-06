@@ -60,26 +60,44 @@ def main():
     ap.add_argument('--start-yaw', type=float, default=0.0, help='degrees')
     ap.add_argument('--seconds', type=float, default=150.0)
     ap.add_argument('--quiet', action='store_true')
+    ap.add_argument('--front', type=float, default=0.30,
+                    help="rover body: metres from the centre to the front edge")
+    ap.add_argument('--back', type=float, default=0.25,
+                    help="rover body: metres from the centre to the back edge")
+    ap.add_argument('--set', action='append', default=[], metavar='NAME=VALUE',
+                    help='override a Params value, e.g. --set lookahead=1.5 (repeatable)')
     args = ap.parse_args()
 
     world, hw, end_x = build(args.course)
-    logic = HallwayLogic(Params())
+    params = Params()
+    for kv in args.set:
+        name, val = kv.split('=', 1)
+        setattr(params, name, type(getattr(params, name))(val))
+    logic = HallwayLogic(params)
     rng = random.Random(1)
     x, y, th = 0.0, args.start_y, math.radians(args.start_yaw)
     dt = 0.1
-    robot_r = logic.p.robot_half_width
-    closest = math.inf
+    lx, ly, hw = logic.p.laser_x, logic.p.laser_y, logic.p.robot_half_width
+    closest = math.inf   # smallest gap between any wall/obstacle point and the rover's body
     states = {}
     stopped_at = None
 
     for k in range(int(args.seconds / dt)):
-        a, r = T.simulate(to_robot(world, x, y, th))
+        # (x, y, th) is the rover's CENTRE; the LiDAR sits at (laser_x, laser_y) on it
+        sx = x + lx * math.cos(th) - ly * math.sin(th)
+        sy = y + lx * math.sin(th) + ly * math.cos(th)
+        a, r = T.simulate(to_robot(world, sx, sy, th))
         if args.noise:
             r = [v + rng.gauss(0, args.noise) if math.isfinite(v) else v for v in r]
         pts = scan_to_xy(a, r, logic.p.min_range)
         d = logic.decide(pts)
         states[d.state] = states.get(d.state, 0) + 1
-        closest = min(closest, min(math.hypot(px, py) for px, py in pts))
+        for px, py in pts:  # distance from each hit to the rover's rectangle
+            bx, by = px + lx, py + ly
+            dx = max(-args.back - bx, 0.0, bx - args.front)
+            dy = max(-hw - by, 0.0, by - hw)
+            gap = math.hypot(dx, dy) if (dx or dy) else -1.0
+            closest = min(closest, gap)
         if not args.quiet and k % 30 == 0:
             print(f"t={k * dt:5.1f}s x={x:5.2f} y={y:+.2f} yaw={math.degrees(th):+6.1f} "
                   f"{d.state:7s} v={d.linear:.2f} w={d.angular:+.2f}")
@@ -90,14 +108,14 @@ def main():
         x += d.linear * math.cos(th) * dt
         y += d.linear * math.sin(th) * dt
 
-    hit = closest < robot_r
-    # it should stop roughly `lookahead` before the end wall
-    reached_end = stopped_at is not None and stopped_at > end_x - logic.p.lookahead - 0.4
+    hit = closest <= 0.0
+    # it should stop roughly `lookahead` (from the rover's centre) before the end wall
+    reached_end = stopped_at is not None and stopped_at > end_x - logic.p.lookahead - 0.5
     print(f"\ncourse={args.course} noise={args.noise} start_y={args.start_y} "
           f"start_yaw={args.start_yaw}")
     print(f"states={states}")
-    print(f"closest approach from LiDAR centre: {closest:.2f} m "
-          f"(rover half-width {robot_r} m) -> {'COLLISION' if hit else 'ok'}")
+    print(f"closest approach to the rover's body: {closest:.2f} m "
+          f"-> {'COLLISION' if hit else 'ok'}")
     print(f"stopped at x={stopped_at if stopped_at is None else round(stopped_at, 2)} "
           f"(end wall at {end_x}) -> {'reached end' if reached_end else 'DID NOT REACH END'}")
     sys.exit(0 if (reached_end and not hit) else 1)

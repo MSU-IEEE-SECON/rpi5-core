@@ -5,7 +5,7 @@ Known from `mecanum.ino`; please fill in the `?`s.
 | Item | Details |
 |---|---|
 | Microcontroller | **ESP32** (dev board model: ?), Bluepad32 board package |
-| USB-serial chip on the ESP32 board | ? (CP2102 or CH340: printed on the chip near the USB port) |
+| USB-serial chip on the ESP32 board | Silicon Labs **CP2102**, USB serial `0001` (seen by the Pi 2026-10-24) |
 | Motor driver board(s) | ? (2 input wires per motor: e.g. L298N, TB6612, DRV8833, MX1508?) |
 | Motors | 4 × ? (voltage, gear ratio), **mecanum wheels**, no encoders |
 | Controller | ? (Bluepad32: Xbox / PS4 / PS5 / Switch Pro ...) |
