@@ -63,7 +63,8 @@ def hallway(left_y=0.8, right_y=-0.8, x0=-3, x1=6, left_gap=None):
 # Smoothing has its own tests at the bottom.
 CENTRED = dict(laser_x=0.0, laser_y=0.0, stop_dist=0.30, slow_dist=1.0,
                lookahead=1.2, steer_lookahead=0.8, kp_heading=1.5, max_turn=0.8,
-               turn_smoothing=1.0, accel=100.0, heading_deadband_deg=0.0)
+               turn_smoothing=1.0, accel=100.0, heading_deadband_deg=0.0,
+               avoid_obstacles=True, max_wall_dist=1.5, wall_fit_x=1.5)
 
 
 def centred(**kw):
@@ -142,7 +143,9 @@ def test_doorway_on_left_does_not_veer():
 
 def test_no_data_stops():
     logic = HallwayLogic(centred())
-    d = logic.decide([])
+    for _ in range(logic.p.coast_scans):          # coasts through a few sparse scans...
+        assert logic.decide([]).state == 'COAST'
+    d = logic.decide([])                          # ...then stops
     assert d.state == 'NO_DATA' and d.linear == 0.0 and d.angular == 0.0
 
 
@@ -239,3 +242,49 @@ def test_speckles_are_dropped():
     lone = [(0.5, 0.0)]
     out = drop_speckles(line[:10] + lone + line[10:], 3)
     assert (0.5, 0.0) not in out and len(out) == 20
+
+
+# ---- simple hallway mode + remembering the hallway direction ---------------
+
+def angled_hall(yaw_deg, left=1.3, right=-1.3):
+    """Hallway walls as seen by a robot yawed yaw_deg to the LEFT of the hall."""
+    t = math.radians(yaw_deg)
+
+    def rot(x, y):  # world -> robot
+        return (x * math.cos(t) + y * math.sin(t), -x * math.sin(t) + y * math.cos(t))
+    return [(*rot(x0, y0), *rot(x1, y1)) for (x0, y0, x1, y1) in hallway(left, right, -3, 8)]
+
+
+def test_hallway_mode_centres_in_a_wide_hall():
+    logic = HallwayLogic(Params(turn_smoothing=1.0, accel=100.0))
+    d = logic.decide(scan_to_xy(*simulate(hallway(1.6, -1.0)), logic.p.min_range))
+    assert d.state == 'FOLLOW' and d.angular > 0.05       # 1.6 m left, 1.0 m right: go left
+    assert d.info['walls'] == 'both'                       # the 1.6 m wall is still found
+
+
+def test_hallway_mode_stops_at_the_end_instead_of_turning():
+    logic = HallwayLogic(Params())
+    pts = scan_to_xy(*simulate(hallway(1.0, -1.0) + [(0.25, -1.0, 0.25, 1.0)]), logic.p.min_range)
+    d = logic.decide(pts)
+    assert d.state == 'BLOCKED' and d.linear == 0.0 and d.angular == 0.0
+
+
+def test_remembers_hallway_direction_when_walls_vanish():
+    logic = HallwayLogic(Params(turn_smoothing=1.0, accel=100.0))
+    d = logic.decide(scan_to_xy(*simulate(angled_hall(20)), logic.p.min_range))
+    assert d.angular < -0.1                                 # angled left of the hall: turn back right
+    # walls disappear (open area / glare): only a far object ahead
+    far = scan_to_xy(*simulate(box(6.0, 0.0, 0.3, 3.0)), logic.p.min_range)
+    d2 = logic.decide(far)
+    assert d2.info['walls'] == 'remembered'
+    assert d2.angular < 0                                   # still knows which way the hall goes
+
+
+def test_ignores_a_single_bogus_wall_reading():
+    logic = HallwayLogic(Params(turn_smoothing=1.0, accel=100.0))
+    straight = scan_to_xy(*simulate(hallway(1.0, -1.0)), logic.p.min_range)
+    for _ in range(5):
+        logic.decide(straight)
+    bogus = scan_to_xy(*simulate(angled_hall(35, 1.0, -1.0)), logic.p.min_range)
+    d = logic.decide(bogus)                                 # one scan says "hall is 35 deg off"
+    assert d.info['walls'] == 'doubted' and abs(d.info['hall_deg']) < 5

@@ -3,12 +3,14 @@
 # Open PowerShell in this folder (in GitHub Desktop: Repository > Open in Command Prompt / Terminal,
 # or right-click the folder > Open in Terminal), then:
 #
+#   .\rover.ps1 go         deploy + mask + restart, all in one (rover in open space!)
 #   .\rover.ps1 deploy     copy this repo's code to the Pi and rebuild
 #   .\rover.ps1 mask       record the rover's own body (rover in open space!)
 #   .\rover.ps1 start      start the demo (then connect the controller, press Y)
 #   .\rover.ps1 stop       stop the demo
 #   .\rover.ps1 restart    stop + start (after deploy or mask)
 #   .\rover.ps1 status     running or not + last log lines
+#   .\rover.ps1 look       20 s of closest thing front/left/back/right (direction check)
 #   .\rover.ps1 log        watch the log live (Ctrl+C stops watching, NOT the rover)
 #   .\rover.ps1 getlog     copy ~/demo.log from the Pi to this folder (to send to Claude)
 #   .\rover.ps1 ssh        just log in to the Pi
@@ -27,6 +29,12 @@ Set-Location $PSScriptRoot
 $remote = "bash ~/rover/pi_setup/rover.sh"
 
 switch ($Action) {
+    "go" {
+        & $PSCommandPath deploy -Pi $Pi
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        ssh $Pi "$remote mask"
+        ssh $Pi "$remote restart"
+    }
     "deploy" {
         Write-Host "Copying code to $Pi ..." -ForegroundColor Cyan
         # merges into ~/rover on the Pi; build/, install/ and the LiDAR driver there are kept
@@ -41,6 +49,7 @@ switch ($Action) {
     "stop"    { ssh $Pi "$remote stop" }
     "restart" { ssh $Pi "$remote restart" }
     "status"  { ssh $Pi "$remote status" }
+    "look"    { ssh $Pi "$remote look" }
     "log"     { ssh -t $Pi "$remote log" }
     "getlog"  {
         $name = "demo_" + (Get-Date -Format "MMdd_HHmm") + ".log"
@@ -57,5 +66,5 @@ switch ($Action) {
         Get-Content "$key.pub" | ssh $Pi "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
         Write-Host "Done. SSH to the Pi won't ask for the password from this laptop anymore." -ForegroundColor Green
     }
-    default   { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 17 | ForEach-Object { $_ -replace '^# ?', '' } }
+    default   { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 19 | ForEach-Object { $_ -replace '^# ?', '' } }
 }

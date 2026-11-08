@@ -101,11 +101,37 @@ bash ~/rover/pi_setup/install_autostart.sh
 Now: power on → wait ~30 s for boot → connect the controller → press **Y**. Log afterwards with
 `journalctl -u rover-demo -f` when plugged back in.
 
+## Two modes (`avoid_obstacles` in config/hallway.yaml)
+
+**Hallway mode (default, `avoid_obstacles: false`)**: what it looks for, each scan:
+1. **The two walls**: the longest straight line on each side (up to 3 m away). That
+   gives "which way is down the hallway" and how far each wall is.
+2. **The middle**: it steers toward the point halfway between the walls, ~0.8 m ahead,
+   lined up with the hallway direction (never more than 40° across it).
+3. **Anything in its path** (a 0.42 m wide strip straight ahead): it slows from 0.8 m
+   and **stops** at 0.3 m. End of the hallway = a wall in its path = stop. It does
+   not try to steer around things in this mode.
+
+It also **remembers which way the hallway goes** between scans. When it turns, it
+expects the walls to appear rotated by that turn, so a doorway, a person or a bad
+wall reading can't convince it the hallway suddenly points somewhere else (it needs
+4 scans in a row to believe that). With no walls in view it keeps going along the
+remembered direction instead of assuming "wherever I'm pointing is down the hallway".
+With one wall in view it uses the remembered hallway width to find the middle.
+Pressing **Y** again makes it re-learn the hallway from where it is.
+
+**Obstacle mode (`avoid_obstacles: true`)**: the same, plus it looks for gaps
+between obstacles and steers or pivots around them (the original behaviour).
+
+Simulator (plain, wide and doorway-filled hallways, crooked starts, noise, motors
+turning 40% slower/50% faster than commanded, walls vanishing in 30% of scans):
+**54/54 reach the end, finishing within 4 cm of the centre.**
+
 ## Self mask: stop it seeing its own body (do this once)
 
 The LiDAR sees bits of the rover itself (mount, wires, chassis edge) a few cm
 away. Those look like obstacles right in front, so the rover swerves and stops at
-nothing. Record them once, with the rover in **open space, nothing within ~0.5 m**:
+nothing. Record them once, with **nothing within ~0.3 m of the rover's front half** (a desk is fine; the laptop and cable behind it are ignored):
 
 ```bash
 ros2 launch rover_bringup lidar.launch.py        # terminal 1 (or the demo, not driving)
@@ -149,7 +175,7 @@ python3 -m pytest test/test_hallway_logic.py -q          # unit tests (pip insta
 python3 test/sim_drive.py --course zigzag --noise 0.02   # full simulated drive (prints a wiggle score)
 ```
 
-Courses: `default`, `zigzag`, `narrow`, `empty`, `doorways`. Also
+Courses: `default`, `zigzag`, `narrow`, `empty`, `doorways` (obstacles, use `--set avoid_obstacles=true`), `hall`, `wide`, `doors` (plain hallways). `--turn-gain 0.6` = motors turn slower than asked, `--dropout 0.3` = walls go missing. Also
 `--start-y 0.3 --start-yaw 25` to start off-centre and angled.
 
 `robot_half_width: 0.13` = our 10 in wide rover.

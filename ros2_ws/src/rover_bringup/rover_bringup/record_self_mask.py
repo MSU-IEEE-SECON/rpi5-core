@@ -5,7 +5,7 @@ fixed angles, very close. Those look like obstacles right in front of the
 robot, which makes it swerve and stop at nothing. This tool records them once
 so hallway_follower can ignore them.
 
-How to use (rover in OPEN space, nothing within ~0.5 m of it, LiDAR running):
+How to use (rover in OPEN space, nothing within ~0.3 m of it, LiDAR running):
     ros2 launch rover_bringup lidar.launch.py      # (or demo.launch.py, not driving)
     ros2 run rover_bringup record_self_mask
 It watches ~30 scans, prints the angles it found, saves ~/rover/self_mask.json
@@ -71,7 +71,7 @@ class RecordSelfMask(Node):
     def __init__(self):
         super().__init__('record_self_mask')
         self.declare_parameter('scans', 30)
-        self.declare_parameter('max_range', 0.40)      # m, anything closer could be the rover
+        self.declare_parameter('max_range', 0.20)      # m, anything closer could be the rover (our parts are <0.1 m)
         self.declare_parameter('bin_deg', 1.0)
         self.declare_parameter('out', '~/rover/self_mask.json')
         self.want = int(self.get_parameter('scans').value)
@@ -117,10 +117,17 @@ def main(args=None):
             rclpy.spin_once(node, timeout_sec=0.5)
     except KeyboardInterrupt:
         pass
+    except Exception:  # noqa: BLE001  (timeout / shutdown before enough scans arrived)
+        print(f'Stopped after {len(node.scans)} scans, nothing saved. Is the LiDAR running?')
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+    if not node.done:
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

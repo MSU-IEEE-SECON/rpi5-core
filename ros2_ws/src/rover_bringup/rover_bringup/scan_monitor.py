@@ -34,6 +34,9 @@ class ScanMonitor(Node):
         super().__init__('scan_monitor')
         self.declare_parameter('sector_width_deg', 40.0)
         self.declare_parameter('print_period_s', 0.5)
+        # same direction fix as hallway_follower (rover.sh look loads hallway.yaml)
+        self.declare_parameter('laser_yaw', 0.0)
+        self.declare_parameter('laser_mirror', False)
         self.latest = None
         self.create_subscription(LaserScan, 'scan', self.on_scan, qos_profile_sensor_data)
         self.create_timer(self.get_parameter('print_period_s').value, self.report)
@@ -46,10 +49,12 @@ class ScanMonitor(Node):
         best = math.inf
         best_angle = None
         half = width_deg / 2.0
+        yaw = math.degrees(float(self.get_parameter('laser_yaw').value))
+        sign = -1.0 if bool(self.get_parameter('laser_mirror').value) else 1.0
         for i, r in enumerate(msg.ranges):
             if not math.isfinite(r) or r < msg.range_min or r > msg.range_max:
                 continue
-            ang = wrap_deg(math.degrees(msg.angle_min + i * msg.angle_increment))
+            ang = wrap_deg(yaw + sign * math.degrees(msg.angle_min + i * msg.angle_increment))
             if abs(wrap_deg(ang - centre_deg)) <= half and r < best:
                 best, best_angle = r, ang
         return best, best_angle

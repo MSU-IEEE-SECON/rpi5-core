@@ -47,6 +47,8 @@ class DriveBridge(Node):
         self.last_cmd = Twist()
         self.last_cmd_time = None
         self.last_port_warn = 0.0
+        self.last_rx_time = 0.0      # last time the ESP32 sent anything
+        self.last_silent_warn = 0.0
 
         self.mode_pub = self.create_publisher(String, 'drive/mode', 10)
         self.enable_pub = self.create_publisher(Bool, 'rover/enable', ENABLE_QOS)
@@ -77,6 +79,7 @@ class DriveBridge(Node):
             s.rts = False
             s.open()
             self.ser = s
+            self.last_rx_time = now
             self.get_logger().info(f'{msg}: connected')
             return True
         except Exception as e:  # noqa: BLE001
@@ -119,8 +122,17 @@ class DriveBridge(Node):
 
     def read_lines(self):
         data = self.ser.read(self.ser.in_waiting or 0)
+        now = self.now_s()
         if not data:
+            # mecanum_auto sends a status line 5x a second; silence means it isn't running
+            if now - self.last_rx_time > 3.0 and now - self.last_silent_warn > 10.0:
+                self.get_logger().warn(
+                    'ESP32 connected but SILENT (no status for 3 s): its sketch is not running. '
+                    'Press the EN/RST button on the ESP32 (or unplug/replug its USB), '
+                    'then: .\\rover.ps1 restart')
+                self.last_silent_warn = now
             return
+        self.last_rx_time = now
         self.rx += data
         if len(self.rx) > 4096:
             self.rx = self.rx[-1024:]

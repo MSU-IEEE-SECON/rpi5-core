@@ -41,6 +41,7 @@ class HallwayFollower(Node):
         for name, val in vars(defaults).items():
             self.declare_parameter(name, val)
         self.declare_parameter('laser_yaw', 0.0)        # rad, LiDAR rotation on the rover
+        self.declare_parameter('laser_mirror', False)   # flip scan direction before laser_yaw
         self.declare_parameter('scan_timeout_s', 0.5)
         self.declare_parameter('start_enabled', False)
         self.declare_parameter('log_period_s', 0.5)
@@ -84,6 +85,8 @@ class HallwayFollower(Node):
         if msg.data != self.enabled:
             self.enabled = msg.data
             self.get_logger().info('ENABLED: driving' if self.enabled else 'DISABLED: stopping')
+            if self.enabled:
+                self.logic.reset_tracking()  # re-learn the hallway from where we are now
             if not self.enabled:
                 self.stop()
 
@@ -92,9 +95,14 @@ class HallwayFollower(Node):
         yaw = float(self.get_parameter('laser_yaw').value)
         raw = [msg.angle_min + i * msg.angle_increment for i in range(len(msg.ranges))]
         ranges = self._apply_mask(raw, msg.ranges)
-        angles = [a + yaw for a in raw]
+        sign = -1.0 if bool(self.get_parameter('laser_mirror').value) else 1.0
+        angles = [yaw + sign * a for a in raw]
         pts = scan_to_xy(angles, ranges, self.logic.p.min_range, msg.range_max)
         d = self.logic.decide(pts)
+        if not self.enabled:
+            # we're not driving, so the robot didn't turn the way d says (the
+            # driver might be, though): don't let that fool the hallway memory
+            self.logic.prev_w = self.logic.prev_v = 0.0
 
         state = d.state if self.enabled else 'DISABLED'
         self.state_pub.publish(String(data=state))
@@ -165,8 +173,10 @@ class HallwayFollower(Node):
             fmt = lambda v: '  -- ' if v is None or not math.isfinite(v) else f'{v:4.2f}'  # noqa: E731
             self.get_logger().info(
                 f"{state:8s} v={d.linear:+.2f} w={d.angular:+.2f} | "
-                f"L={fmt(i.get('L'))} R={fmt(i.get('R'))} front={fmt(i.get('front'))} "
-                f"hall={i.get('hall_deg', 0.0):+5.1f}deg target_y={fmt(i.get('target_y'))}")
+                f"L={fmt(i.get('L'))} R={fmt(i.get('R'))} walls={i.get('walls', '-')} front={fmt(i.get('front'))} "
+                f"hall={i.get('hall_deg', 0.0):+5.1f}deg target_y={fmt(i.get('target_y'))}"
+                + (f" | nearest in path @{i['front_at'][0]:+.0f}deg {i['front_at'][1]:.2f}m"
+                   if i.get('front_at') else ''))
             self.last_log = t
             self.last_state = state
 

@@ -146,6 +146,30 @@ or the hardware so the team can retrace it.
   3 hard cases as before: 25°-crooked starts with noise), steering reversals 232 → 92.
 - Code defaults in `hallway_logic.py` now match `hallway.yaml` (LiDAR offset 0).
 
+- Later Nov 6 runs: the ESP32 went silent once (stuck after a force-stop of the
+  demo); a reset fixed it, and `drive_bridge` now warns `ESP32 ... SILENT`. Y/B worked.
+  The rover still pivoted right at phantom points 4–7 cm from the LiDAR → `min_range`
+  raised to 0.12 m. Walls were rarely found (hallway wider than the 1.5 m limit), so
+  "down the hallway" was just "wherever it pointed" after each turn.
+- New mount: LiDAR on the front, centred, arrow forward, front 180° used.
+- Rewrote the behaviour around what we actually want: **hallway mode** (default):
+  stay centred, drive down the hall, stop for anything ahead. Walls found up to 3 m.
+  It remembers the hallway direction across scans (predicts it from its own turning,
+  doubts readings that disagree), uses the remembered width when one wall is missing,
+  coasts through a few sparse scans. Obstacle avoiding is still there with
+  `avoid_obstacles: true`. 28 unit tests; simulator 54/54 hallway runs.
+
+## 2026-11-08
+
+- Pi found at the fixed address `192.168.137.50` (`rover.local` didn't resolve); use
+  `-Pi rover@192.168.137.50`. Hallway-mode code deployed, mask re-recorded.
+- Added `rover.ps1 look` (closest thing front/left/back/right, 20 s).
+- **New mount reads the scan mirrored front-to-back:** a hand in front read as "back"
+  (178°), a hand on the right read as "right" (−87°), and the wall ~7 ft ahead read as
+  "back 2.24 m". Fix in `hallway.yaml`: `laser_mirror: true`, `laser_yaw: 3.14159`
+  (rover angle = 180° − raw). The self mask stays in raw angles, so it's still valid.
+  `look` now shows directions as the driving code sees them.
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop

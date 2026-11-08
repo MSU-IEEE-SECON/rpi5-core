@@ -17,8 +17,8 @@ hallway_follower:
     steer_lookahead: 0.8            # m, aim point distance (bigger = gentler steering)
     slow_dist: 0.8                  # m, start slowing for things in the path
     stop_dist: 0.3                  # m, stop forward motion inside this
-    max_wall_dist: 1.5              # m, side readings beyond this = "no wall"
-    wall_fit_x: 1.5                 # m, |x| window of points used to find the walls
+    max_wall_dist: 3.0              # m, side readings beyond this = "no wall" (fits a wide hallway)
+    wall_fit_x: 2.0                 # m, |x| window of points used to find the walls
     wall_tol: 0.04                  # m, how far a point can be from a wall line and count
     min_wall_span: 0.6              # m, a "wall" must be at least this long
     ransac_iters: 60                # line-fit attempts per side per scan
@@ -27,7 +27,7 @@ hallway_follower:
     side_stop: 0.05                 # m, won't turn toward a side closer than robot_half_width + this
     stick_bonus: 0.15               # m, preference for keeping the previously chosen side
     width_bonus: 0.6                # preference for wider gaps (score -= this * gap width)
-    min_range: 0.06                 # m, ignore returns closer than this (C1 min ~0.05)
+    min_range: 0.12                 # m, ignore returns closer than this to the LiDAR (C1 is unreliable <0.1 m; closer = our own rover)
     wall_margin: 0.1                # m, points within this of a wall line count as wall, not obstacle
     clear_scans_reset: 5            # scans with nothing between the walls before forgetting the chosen side
     hit_margin: 0.05                # m, clearance beyond robot_half_width that counts as "would hit"
@@ -35,6 +35,14 @@ hallway_follower:
     laser_x: 0.0                    # m, LiDAR position from the rover's centre: + = forward of centre
     laser_y: 0.0                    # m, LiDAR position from the rover's centre: + = LEFT of centre, - = right
     fov_deg: 180.0                  # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    # --- MODE ---
+    avoid_obstacles: false          # false = hallway mode: stay centred, drive down the hall, STOP for anything ahead
+                                    # true  = also steer around obstacles (the original behaviour)
+    # --- remembering which way the hallway goes (so turning can't confuse it) ---
+    hall_gate_deg: 15.0             # deg, wall readings this far off the expected direction are doubted
+    hall_gain: 0.5                  # 0..1, how much each new wall reading corrects the remembered direction
+    hall_relock_scans: 4            # doubted readings in a row before believing them anyway
+    coast_scans: 3                  # sparse scans in a row to coast through before stopping
     # --- smoothing (added Nov 6 for the "drunk driver" wiggle) ---
     turn_smoothing: 0.35            # 0..1, how fast steering follows a new decision (1.0 = instant, old behaviour)
     heading_deadband_deg: 2.0       # deg, ignore heading errors smaller than this (stops micro-wiggle)
@@ -45,7 +53,11 @@ hallway_follower:
     # --- self mask: the rover's own body in the scan (record_self_mask) ---
     self_mask_file: "~/rover/self_mask.json"
     self_mask_margin: 0.03          # m, extra beyond the recorded body
-    laser_yaw: 0.0                  # rad, if the LiDAR arrow doesn't face the rover's front
+    # LiDAR direction fix. Nov 8 hand test on the new mount: a hand in FRONT read as 'back'
+    # (~180 deg) while a hand on the RIGHT read as 'right' (-90): the scan is mirrored
+    # front-to-back. Rover angle = laser_yaw - raw angle when laser_mirror is true.
+    laser_yaw: 3.14159              # rad
+    laser_mirror: true              # true = flip the scan direction (then rotate by laser_yaw)
     scan_timeout_s: 0.5             # stop if no LiDAR data for this long
     start_enabled: false            # true = drive as soon as it starts (not recommended)
     log_period_s: 0.5               # status line rate in the terminal

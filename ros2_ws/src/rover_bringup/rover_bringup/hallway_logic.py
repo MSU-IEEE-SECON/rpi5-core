@@ -41,8 +41,8 @@ class Params:
     steer_lookahead: float = 0.8    # m, aim point distance (bigger = gentler steering)
     slow_dist: float = 0.8          # m, start slowing for things in the path
     stop_dist: float = 0.30         # m, stop forward motion inside this
-    max_wall_dist: float = 1.5      # m, side readings beyond this = "no wall"
-    wall_fit_x: float = 1.5         # m, |x| window of points used to find the walls
+    max_wall_dist: float = 3.0      # m, side readings beyond this = "no wall" (big enough for a wide hallway)
+    wall_fit_x: float = 2.0         # m, |x| window of points used to find the walls
     wall_tol: float = 0.04          # m, how far a point can be from a wall line and count
     min_wall_span: float = 0.6      # m, a "wall" must be at least this long
     ransac_iters: int = 60          # line-fit attempts per side per scan
@@ -51,7 +51,7 @@ class Params:
     side_stop: float = 0.05         # m, won't turn toward a side closer than robot_half_width + this
     stick_bonus: float = 0.15       # m, preference for keeping the previously chosen side
     width_bonus: float = 0.6        # preference for wider gaps (score -= this * gap width)
-    min_range: float = 0.06         # m, ignore returns closer than this (C1 min ~0.05)
+    min_range: float = 0.12         # m, ignore returns closer than this (C1 unreliable <0.1 m, and it's our own rover)
     wall_margin: float = 0.10       # m, points within this of a wall line count as wall, not obstacle
     clear_scans_reset: int = 5      # scans with nothing between the walls before forgetting the chosen side
     hit_margin: float = 0.05        # m, clearance beyond robot_half_width that counts as "would hit"
@@ -66,6 +66,13 @@ class Params:
     scan_dt: float = 0.1            # s, time between scans (C1 = 10 Hz)
     stop_release: float = 0.10      # m, once stopped, path must be this much past stop_dist to go again
     min_obstacle_pts: int = 3       # an obstacle must be at least this many points (drops single-point noise)
+    coast_scans: int = 3            # sparse scans in a row to coast through before stopping
+    # --- mode ---
+    avoid_obstacles: bool = False   # False = simple hallway mode: stay centred, go, stop for anything ahead
+    # --- remembering which way the hallway goes ---
+    hall_gate_deg: float = 15.0     # deg, a new wall reading this far from the expected direction is doubted
+    hall_gain: float = 0.5          # 0..1, how much each new wall reading corrects the remembered direction
+    hall_relock_scans: int = 4      # doubted readings in a row before believing them anyway
 
 
 @dataclass
@@ -117,7 +124,61 @@ class HallwayLogic:
         self.prev_w = 0.0      # last angular command (for smoothing)
         self.prev_v = 0.0      # last linear command (for the accel limit)
         self.stopped = False   # in PIVOT/BLOCKED last scan (for stop hysteresis)
+        self.reset_tracking()
         self._rng = random.Random(0)  # deterministic line fitting
+
+    def reset_tracking(self):
+        """Forget the remembered hallway direction / width (e.g. after manual driving)."""
+        self.phi_est = None    # remembered hallway angle relative to the robot (rad)
+        self.doubt = 0         # wall readings in a row that disagreed with phi_est
+        self.width = None      # remembered hallway width (m)
+        self.last_LR = None    # last (L, R) we trusted
+
+    def track_hall(self, phi_m, L, R, mode):
+        """Combine this scan's wall reading with what we remember.
+
+        Between scans the robot turned by about prev_w * dt, so the hallway should
+        now appear rotated the other way by that much. A reading that agrees with
+        that prediction refines it; one that doesn't (a doorway, a person, a wall
+        fit on the wrong thing) is ignored unless it keeps happening. With no walls
+        in view at all we keep driving on the remembered direction instead of
+        assuming "straight ahead is down the hallway".
+        Returns (phi, L, R, mode).
+        """
+        p = self.p
+        pred = None if self.phi_est is None else self.phi_est - self.prev_w * p.scan_dt
+        if pred is not None and self.last_LR is not None:
+            # we also drifted sideways while angled: yaw vs hall = -pred
+            drift = self.prev_v * p.scan_dt * math.sin(-pred)
+            self.last_LR = (self.last_LR[0] - drift, self.last_LR[1] + drift)
+        if mode == 'none':
+            if pred is None:
+                return 0.0, L, R, 'none'
+            self.phi_est = pred
+            if self.last_LR:
+                return pred, self.last_LR[0], self.last_LR[1], 'remembered'
+            return pred, L, R, 'remembered'
+        if pred is not None and abs(phi_m - pred) > math.radians(p.hall_gate_deg):
+            self.doubt += 1
+            if self.doubt < p.hall_relock_scans:
+                self.phi_est = pred
+                if self.last_LR:
+                    return pred, self.last_LR[0], self.last_LR[1], 'doubted'
+                return pred, L, R, 'doubted'
+            pred = None  # it keeps saying so: believe it
+        self.doubt = 0
+        self.phi_est = phi_m if pred is None else pred + p.hall_gain * (phi_m - pred)
+        # one wall only: use the remembered width instead of mirroring it
+        if mode == 'both':
+            w = L + R
+            self.width = w if self.width is None else 0.8 * self.width + 0.2 * w
+        elif self.width:
+            if mode == 'left_only':
+                R = max(0.0, self.width - L)
+            elif mode == 'right_only':
+                L = max(0.0, self.width - R)
+        self.last_LR = (L, R)
+        return self.phi_est, L, R, mode
 
     # -- steps 0-1: find the walls (robust line fit) -------------------------
     def fit_wall(self, side_pts):
@@ -259,6 +320,14 @@ class HallwayLogic:
         """Raw decision + smoothing, so one odd scan can't jerk the wheels."""
         p = self.p
         d = self._decide_raw(pts)
+        if d.state == 'NO_DATA':
+            # one sparse scan (open area, glare): coast briefly instead of a jerky stop
+            self.nodata = getattr(self, 'nodata', 0) + 1
+            if self.nodata <= p.coast_scans and not self.stopped:
+                self.prev_w *= 0.5
+                return Decision(self.prev_v, self.prev_w, 'COAST', d.info)
+        else:
+            self.nodata = 0
         self.stopped = d.state in ('PIVOT', 'BLOCKED')
         a = max(0.0, min(1.0, p.turn_smoothing))
         if d.state == 'NO_DATA' or (d.state == 'BLOCKED'):
@@ -284,7 +353,7 @@ class HallwayLogic:
 
         # Work out wall/gap geometry in a "hallway frame" lined up with the walls,
         # so an angled robot doesn't see the walls ahead as obstacles.
-        phi, L, R, wall_mode = self.find_walls(pts)
+        phi, L, R, wall_mode = self.track_hall(*self.find_walls(pts))
         c, s = math.cos(phi), math.sin(phi)
         hpts = [(x * c + y * s, -x * s + y * c) for x, y in pts]
 
@@ -293,14 +362,25 @@ class HallwayLogic:
         # (slow down for it); "hit" is what the body would actually touch (stop for it).
         front = self.path_distance(pts, p.robot_half_width + p.side_margin)
         front_hit = self.path_distance(pts, p.robot_half_width + p.hit_margin)
+        hit_pts = [(x, y) for x, y in pts if x > 0.0 and abs(y) <= p.robot_half_width + p.side_margin]
+        if hit_pts:  # where the nearest thing in our path is (for the log)
+            hx, hy = min(hit_pts)
+            front_at = (math.degrees(math.atan2(hy - p.laser_y, hx - p.laser_x)),
+                        math.hypot(hx - p.laser_x, hy - p.laser_y))
+        else:
+            front_at = None
         info = {'L': L, 'R': R, 'walls': wall_mode, 'front': front, 'gaps': len(gaps),
+                'front_at': front_at,
                 'hall_deg': math.degrees(phi)}
 
-        if not gaps:
+        if not p.avoid_obstacles:
+            # simple hallway mode: aim for the middle between the walls
+            target_y = 0.5 * (L - R) if wall_mode != 'none' else 0.0
+        elif not gaps:
             return Decision(0.0, 0.0, 'BLOCKED', info)
-
-        lo, hi = self.choose_gap(gaps)
-        target_y = 0.5 * (lo + hi)
+        else:
+            lo, hi = self.choose_gap(gaps)
+            target_y = 0.5 * (lo + hi)
         info['target_y'] = target_y
 
         # aim point in the hallway frame -> robot frame
@@ -338,6 +418,8 @@ class HallwayLogic:
 
         # hysteresis: once stopped, don't creep forward until clearly clear
         stop_at = p.stop_dist + (p.stop_release if self.stopped else 0.0)
+        if front_hit <= stop_at and not p.avoid_obstacles:
+            return Decision(0.0, 0.0, 'BLOCKED', info)  # end of the hallway / something ahead: stop
         if front_hit <= stop_at:
             # something the body would hit: stop and turn in place toward the gap,
             # unless that would angle us past max_hall_yaw (then just wait: BLOCKED)
@@ -356,5 +438,5 @@ class HallwayLogic:
         # ease off when turning hard
         linear *= max(0.4, 1.0 - 0.5 * abs(angular) / p.max_turn)
 
-        state = 'AVOID' if n_inner and in_path else 'FOLLOW'
+        state = 'AVOID' if p.avoid_obstacles and n_inner and in_path else 'FOLLOW'
         return Decision(linear, angular, state, info)

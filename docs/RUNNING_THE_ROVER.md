@@ -8,7 +8,7 @@ repo folder (GitHub Desktop: *Repository → Open in Command Prompt*, then type
 |---|---|
 | `.\rover.ps1 key` | **One time per laptop:** stops SSH asking for the Pi password every time |
 | `.\rover.ps1 deploy` | Copies this repo's code to the Pi and rebuilds |
-| `.\rover.ps1 mask` | Records the rover's own body in the LiDAR (rover in open space, nothing within 0.5 m) |
+| `.\rover.ps1 mask` | Records the rover's own body in the LiDAR (rover in open space, nothing within 0.3 m of the front half) |
 | `.\rover.ps1 start` | Starts the demo. Then connect the controller and press **Y** |
 | `.\rover.ps1 stop` | Stops the demo |
 | `.\rover.ps1 restart` | Stop + start (after `deploy` or `mask`) |

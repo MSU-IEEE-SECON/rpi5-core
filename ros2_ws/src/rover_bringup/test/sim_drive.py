@@ -29,13 +29,27 @@ COURSES = {
     'narrow': (0.55, [(2.5, 0.2, 0.2, 0.2)], 6.0),
     'empty': (0.8, [], 8.0),
     'doorways': (0.8, [(3.0, -0.1, 0.3, 0.3)], 8.0),
+    # plain hallways for the simple hallway mode (avoid_obstacles false)
+    'hall': (0.8, [], 15.0),
+    'wide': (1.4, [], 15.0),
+    'doors': (1.2, [], 15.0),
+}
+# doorways / side openings: course -> [(side, x_start, x_end)], side +1 = left wall
+DOORS = {
+    'doorways': [(+1, 1.0, 2.0)],
+    'doors': [(+1, 2.0, 3.0), (-1, 4.5, 5.5), (+1, 7.0, 9.0), (-1, 7.5, 8.5), (+1, 11.0, 12.0)],
 }
 
 
 def build(course):
     hw, obstacles, end_x = COURSES[course]
-    gap = (1.0, 2.0) if course == 'doorways' else None
-    world = T.hallway(hw, -hw, -3, end_x + 1, left_gap=gap)
+    world = []
+    for side in (+1, -1):
+        x0 = -3.0
+        for sd, xa, xb in sorted(d for d in DOORS.get(course, []) if d[0] == side):
+            world.append((x0, side * hw, xa, side * hw))
+            x0 = xb
+        world.append((x0, side * hw, end_x + 1, side * hw))
     world.append((end_x, -hw, end_x, hw))
     for o in obstacles:
         world += T.box(*o)
@@ -64,6 +78,10 @@ def main():
                     help="rover body: metres from the centre to the front edge")
     ap.add_argument('--back', type=float, default=0.25,
                     help="rover body: metres from the centre to the back edge")
+    ap.add_argument('--dropout', type=float, default=0.0,
+                    help='fraction of scans where the side walls go missing (glare, people, open areas)')
+    ap.add_argument('--turn-gain', type=float, default=1.0,
+                    help='real turn rate / commanded (uncalibrated motors), e.g. 0.6')
     ap.add_argument('--set', action='append', default=[], metavar='NAME=VALUE',
                     help='override a Params value, e.g. --set lookahead=1.5 (repeatable)')
     args = ap.parse_args()
@@ -72,7 +90,8 @@ def main():
     params = Params()
     for kv in args.set:
         name, val = kv.split('=', 1)
-        setattr(params, name, type(getattr(params, name))(val))
+        cur = getattr(params, name)
+        setattr(params, name, (val.lower() in ('1', 'true', 'yes')) if isinstance(cur, bool) else type(cur)(val))
     logic = HallwayLogic(params)
     rng = random.Random(1)
     x, y, th = 0.0, args.start_y, math.radians(args.start_yaw)
@@ -90,6 +109,8 @@ def main():
         a, r = T.simulate(to_robot(world, sx, sy, th))
         if args.noise:
             r = [v + rng.gauss(0, args.noise) if math.isfinite(v) else v for v in r]
+        if args.dropout and rng.random() < args.dropout:
+            r = [v if abs(ang) < math.radians(25) else math.inf for ang, v in zip(a, r)]
         pts = scan_to_xy(a, r, logic.p.min_range)
         d = logic.decide(pts)
         states[d.state] = states.get(d.state, 0) + 1
@@ -112,7 +133,7 @@ def main():
         if d.state == 'BLOCKED':
             stopped_at = x
             break
-        th += d.angular * dt
+        th += d.angular * args.turn_gain * dt
         x += d.linear * math.cos(th) * dt
         y += d.linear * math.sin(th) * dt
 
@@ -125,6 +146,7 @@ def main():
     print(f"wiggle: steering reversals={flips}  total steering change={dw_sum:.1f} rad/s")
     print(f"closest approach to the rover's body: {closest:.2f} m "
           f"-> {'COLLISION' if hit else 'ok'}")
+    print(f"final offset from the hallway centre: {y:+.2f} m, heading {math.degrees(th):+.0f} deg")
     print(f"stopped at x={stopped_at if stopped_at is None else round(stopped_at, 2)} "
           f"(end wall at {end_x}) -> {'reached end' if reached_end else 'DID NOT REACH END'}")
     sys.exit(0 if (reached_end and not hit) else 1)
