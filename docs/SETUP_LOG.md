@@ -175,6 +175,25 @@ or the hardware so the team can retrace it.
   New `body_front` / `body_half_width` settings drop a box around the rover's own body.
   Firmware: Y debounced (500 ms) so one press can't toggle twice (reflash needed).
 
+- LiDAR re-oriented again. Instead of hand-tuning `laser_yaw`/`laser_mirror`, added
+  `calibrate_lidar` (`rover.sh calibrate`): reads the empty room (where the rover/mount
+  blocks the view), then a box held in front and front-left -> rover front, mirrored or
+  not, and the usable arc each side (sides at ±90° are blocked on this mount). Saved to
+  `~/rover/lidar_calib.json` on the Pi; overrides hallway.yaml; deploys don't touch it.
+  `fov_left_deg`/`fov_right_deg` replace the symmetric 180° view. 35 tests.
+
+## 2026-11-10
+
+- Arena board finished; hallway mode is archived (kept, selectable) — next target is the arena.
+- A teammate reorganized the Pi: `~/rover` → `~/rover_archive`, repo cloned at
+  `~/repos/rpi5-core` (SSH remote), `arduino-cli` + `~/sewer/esp32-firmware/{compile,upload}.sh`
+  flash the ESP32 from the Pi (`/dev/esp32`), plus BNO055 IMU and micro-ROS experiments.
+  Controller had stopped working (ESP32 had test firmware) → reflashed our `mecanum_auto`
+  from the Pi. **BNO055 IMU is on the rover** (wired to the ESP32).
+- Tools moved to the new layout: code in `~/repos/rpi5-core`, settings in `~/rover_data`,
+  new `rover.sh setup` (copies LiDAR driver + settings from the archive, fixes ~/.bashrc, builds).
+- Pi had no DNS/internet (git pull failed) — code copied from the laptop instead.
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop

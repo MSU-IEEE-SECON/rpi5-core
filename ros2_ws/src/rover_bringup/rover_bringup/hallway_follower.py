@@ -45,7 +45,7 @@ class HallwayFollower(Node):
         self.declare_parameter('scan_timeout_s', 0.5)
         self.declare_parameter('start_enabled', False)
         self.declare_parameter('log_period_s', 0.5)
-        self.declare_parameter('self_mask_file', '~/rover/self_mask.json')
+        self.declare_parameter('self_mask_file', os.path.join(os.environ.get('ROVER_DATA', '~/rover_data'), 'self_mask.json'))
         self.declare_parameter('self_mask_margin', 0.03)  # m, extra beyond the recorded body
 
         self.logic = HallwayLogic(self._read_params())
@@ -61,6 +61,7 @@ class HallwayFollower(Node):
         self.create_subscription(Bool, 'rover/enable', self.on_enable, ENABLE_QOS)
         self.create_timer(0.1, self.watchdog)
         self.add_on_set_parameters_callback(self._on_params)
+        self._load_calibration()   # after the callback, so it reaches the logic too
 
         self.get_logger().info(
             'hallway_follower ready, DISABLED. Start with the button or:  '
@@ -126,6 +127,30 @@ class HallwayFollower(Node):
                 self.get_logger().warn('No /scan data: stopping')
                 self.last_state = 'NO_SCAN'
             self.state_pub.publish(String(data='NO_SCAN'))
+
+    # -- LiDAR calibration (front direction + usable arc) ----------------------
+    def _load_calibration(self):
+        """~/rover_data/lidar_calib.json from calibrate_lidar overrides the yaml settings."""
+        from rclpy.parameter import Parameter
+        from rover_bringup import lidar_calib
+        try:
+            c = lidar_calib.load()
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().error(f'Could not read LiDAR calibration: {e}')
+            return
+        if not c:
+            self.get_logger().warn('No LiDAR calibration (~/rover_data/lidar_calib.json): using '
+                                   'hallway.yaml directions. Run: rover.sh calibrate')
+            return
+        self.set_parameters([
+            Parameter('laser_yaw', value=math.radians(float(c['laser_yaw_deg']))),
+            Parameter('laser_mirror', value=bool(c['laser_mirror'])),
+            Parameter('fov_left_deg', value=float(c['fov_left_deg'])),
+            Parameter('fov_right_deg', value=float(c['fov_right_deg']))])
+        self.get_logger().info(
+            f"LiDAR calibration loaded ({c.get('made', '?')}): front = raw "
+            f"{c.get('raw_front_deg', '?')} deg, mirrored {c['laser_mirror']}, sees "
+            f"{c['fov_left_deg']:.0f} deg left / {c['fov_right_deg']:.0f} deg right")
 
     # -- self mask (the rover's own body in the scan) -------------------------
     def _load_mask(self):

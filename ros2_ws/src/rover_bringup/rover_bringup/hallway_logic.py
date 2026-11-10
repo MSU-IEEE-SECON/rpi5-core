@@ -59,6 +59,8 @@ class Params:
     laser_x: float = 0.0             # m, LiDAR position relative to the rover's centre: + = forward
     laser_y: float = 0.0             # m, LiDAR position relative to the rover's centre: + = left
     fov_deg: float = 180.0          # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    fov_left_deg: float = -1.0      # deg usable to the left of ahead (-1 = fov_deg/2); set by calibrate_lidar
+    fov_right_deg: float = -1.0     # deg usable to the right of ahead (-1 = fov_deg/2)
     # --- smoothing (stops the 'drunk driver' wiggle) ---
     turn_smoothing: float = 0.35    # 0..1, how fast steering follows a new decision (1 = instantly)
     heading_deadband_deg: float = 2.0  # deg, ignore heading errors smaller than this
@@ -314,10 +316,12 @@ class HallwayLogic:
 
     def in_fov(self, pts):
         """Keep only points inside the usable field of view (front half by default)."""
-        if self.p.fov_deg >= 360.0:
+        p = self.p
+        if p.fov_left_deg < 0 and p.fov_right_deg < 0 and p.fov_deg >= 360.0:
             return pts
-        half = math.radians(self.p.fov_deg / 2.0) + 1e-6
-        return [(x, y) for x, y in pts if abs(math.atan2(y, x)) <= half]
+        lft = math.radians(p.fov_left_deg if p.fov_left_deg >= 0 else p.fov_deg / 2.0) + 1e-6
+        rgt = math.radians(p.fov_right_deg if p.fov_right_deg >= 0 else p.fov_deg / 2.0) + 1e-6
+        return [(x, y) for x, y in pts if -rgt <= math.atan2(y, x) <= lft]
 
     def decide(self, pts) -> Decision:
         """Raw decision + smoothing, so one odd scan can't jerk the wheels."""

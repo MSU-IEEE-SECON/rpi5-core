@@ -1,5 +1,5 @@
 # hallway_follower settings. Edit, then on the Pi:
-#   cd ~/rover/ros2_ws && colcon build --symlink-install && source install/setup.bash
+#   cd ~/repos/rpi5-core/ros2_ws && colcon build --symlink-install && source install/setup.bash
 # Or change live while it runs:  ros2 param set /hallway_follower cruise_speed 0.2
 # Keep decimals on decimal values (write 1.0 not 1) or ROS rejects the type.
 #
@@ -35,6 +35,8 @@ hallway_follower:
     laser_x: 0.0                    # m, LiDAR position from the rover's centre: + = forward of centre
     laser_y: 0.0                    # m, LiDAR position from the rover's centre: + = LEFT of centre, - = right
     fov_deg: 180.0                  # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    fov_left_deg: -1.0              # deg usable left of ahead (-1 = fov_deg/2). calibrate_lidar sets this
+    fov_right_deg: -1.0             # deg usable right of ahead (-1 = fov_deg/2)
     # --- the rover's own body (Nov 9: wheels beside the front-mounted LiDAR showed up at
     #     +-90 deg, 13-20 cm, and read as 'something in my path' -> always BLOCKED) ---
     body_front: 0.07                # m, how far the rover sticks out in front of the LiDAR (front-right wheel showed at -66 deg, 12 cm)
@@ -55,8 +57,10 @@ hallway_follower:
     stop_release: 0.1               # m, once stopped, path must clear stop_dist by this much to go again
     min_obstacle_pts: 3             # ignore lone single-point returns (1 = off)
     # --- self mask: the rover's own body in the scan (record_self_mask) ---
-    self_mask_file: "~/rover/self_mask.json"
+    self_mask_file: "~/rover_data/self_mask.json"
     self_mask_margin: 0.03          # m, extra beyond the recorded body
+    # NOTE: if ~/rover_data/lidar_calib.json exists on the Pi (rover.sh calibrate), it overrides
+    # laser_yaw, laser_mirror, fov_left_deg and fov_right_deg below.
     # LiDAR direction fix. Nov 8 hand test on the new mount: a hand in FRONT read as 'back'
     # (~180 deg) while a hand on the RIGHT read as 'right' (-90): the scan is mirrored
     # front-to-back. Rover angle = laser_yaw - raw angle when laser_mirror is true.

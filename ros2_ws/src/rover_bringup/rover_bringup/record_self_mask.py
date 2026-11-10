@@ -8,7 +8,7 @@ so hallway_follower can ignore them.
 How to use (rover in OPEN space, nothing within ~0.3 m of it, LiDAR running):
     ros2 launch rover_bringup lidar.launch.py      # (or demo.launch.py, not driving)
     ros2 run rover_bringup record_self_mask
-It watches ~30 scans, prints the angles it found, saves ~/rover/self_mask.json
+It watches ~30 scans, prints the angles it found, saves ~/rover_data/self_mask.json
 and exits. Restart the demo afterwards so the follower loads it.
 
 Re-run it whenever something on the rover moves (LiDAR re-mounted, new parts).
@@ -73,7 +73,7 @@ class RecordSelfMask(Node):
         self.declare_parameter('scans', 30)
         self.declare_parameter('max_range', 0.20)      # m, anything closer could be the rover (our parts are <0.1 m)
         self.declare_parameter('bin_deg', 1.0)
-        self.declare_parameter('out', '~/rover/self_mask.json')
+        self.declare_parameter('out', os.path.join(os.environ.get('ROVER_DATA', '~/rover_data'), 'self_mask.json'))
         self.want = int(self.get_parameter('scans').value)
         self.scans = []
         self.done = False

@@ -38,6 +38,19 @@ class ScanMonitor(Node):
         self.declare_parameter('laser_yaw', 0.0)
         self.declare_parameter('laser_mirror', False)
         self.latest = None
+        try:  # same direction fix as the driving code
+            from rclpy.parameter import Parameter
+            from rover_bringup import lidar_calib
+            c = lidar_calib.load()
+            if c:
+                self.set_parameters([
+                    Parameter('laser_yaw', value=math.radians(float(c['laser_yaw_deg']))),
+                    Parameter('laser_mirror', value=bool(c['laser_mirror']))])
+                self.get_logger().info(
+                    f"using LiDAR calibration: sees {c['fov_left_deg']:.0f} deg left / "
+                    f"{c['fov_right_deg']:.0f} deg right of ahead")
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f'LiDAR calibration not used: {e}')
         self.create_subscription(LaserScan, 'scan', self.on_scan, qos_profile_sensor_data)
         self.create_timer(self.get_parameter('print_period_s').value, self.report)
         self.get_logger().info('Waiting for /scan ...')
