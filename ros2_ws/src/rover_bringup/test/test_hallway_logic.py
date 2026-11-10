@@ -64,7 +64,8 @@ def hallway(left_y=0.8, right_y=-0.8, x0=-3, x1=6, left_gap=None):
 CENTRED = dict(laser_x=0.0, laser_y=0.0, stop_dist=0.30, slow_dist=1.0,
                lookahead=1.2, steer_lookahead=0.8, kp_heading=1.5, max_turn=0.8,
                turn_smoothing=1.0, accel=100.0, heading_deadband_deg=0.0,
-               avoid_obstacles=True, max_wall_dist=1.5, wall_fit_x=1.5)
+               avoid_obstacles=True, max_wall_dist=1.5, wall_fit_x=1.5,
+               body_half_width=0.0)
 
 
 def centred(**kw):
@@ -288,3 +289,12 @@ def test_ignores_a_single_bogus_wall_reading():
     bogus = scan_to_xy(*simulate(angled_hall(35, 1.0, -1.0)), logic.p.min_range)
     d = logic.decide(bogus)                                 # one scan says "hall is 35 deg off"
     assert d.info['walls'] == 'doubted' and abs(d.info['hall_deg']) < 5
+
+
+def test_own_wheels_beside_the_lidar_do_not_block():
+    """Nov 9: wheels at +-90 deg, 13-20 cm from the front-mounted LiDAR made it BLOCKED forever."""
+    logic = HallwayLogic(Params())
+    wheels = [(0.01, 0.13 + 0.01 * i) for i in range(5)] + [(0.01, -0.13 - 0.01 * i) for i in range(5)]
+    pts = scan_to_xy(*simulate(hallway(1.5, -1.5)), logic.p.min_range) + wheels
+    d = logic.decide(pts)
+    assert d.state == 'FOLLOW'

@@ -63,6 +63,8 @@ DriveCmd autoCmd = {0, 0, 0};
 unsigned long lastAutoCmdMs = 0;
 bool haveAutoCmd = false;
 bool lastY = false, lastB = false;
+unsigned long lastYToggleMs = 0;   // Y debounce: one press = one toggle
+const unsigned long Y_DEBOUNCE_MS = 500;
 unsigned long lastStatusMs = 0;
 Wheels lastWheels = {0, 0, 0, 0};
 char rxBuf[64];
@@ -205,7 +207,12 @@ void loop() {
 
             // --- [AUTO] Y toggles AUTO, B always drops back to MANUAL (edge-triggered) ---
             bool y = ctl->y(), b = ctl->b();
-            if (y && !lastY) setAutoMode(!autoMode, "Y button");
+            // Bluetooth can drop a held button for one packet, which looked like two presses
+            // (AUTO then straight back to MANUAL 0.2 s later). Ignore Y re-presses within 500 ms.
+            if (y && !lastY && (lastYToggleMs == 0 || millis() - lastYToggleMs > Y_DEBOUNCE_MS)) {
+                lastYToggleMs = millis() | 1;  // never 0 (0 = no press yet)
+                setAutoMode(!autoMode, "Y button");
+            }
             if (b && !lastB) setAutoMode(false, "B button");
             lastY = y;
             lastB = b;

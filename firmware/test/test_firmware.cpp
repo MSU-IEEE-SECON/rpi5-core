@@ -71,7 +71,10 @@ static void test_mix() {
 static Controller ctl;
 
 static void tick(int n = 1) { for (int i = 0; i < n; i++) loop(); }
-static void pressY() { ctl.by = true; tick(); ctl.by = false; tick(); }
+static void pressY() { g_millis += 600; ctl.by = true; tick(); ctl.by = false; tick(); }
+// a single press that Bluetooth drops for one packet (looks like two quick presses)
+static void bouncyY() { g_millis += 600; ctl.by = true; tick(); ctl.by = false; tick();
+                        g_millis += 100; ctl.by = true; tick(); ctl.by = false; tick(); }
 static void piSend(float vx, float vy, float wz) {
   char buf[64];
   snprintf(buf, sizeof buf, "D %.3f %.3f %.3f\n", vx, vy, wz);
@@ -128,6 +131,9 @@ static void test_sketch() {
   ctl.bb = true; tick(); ctl.bb = false; tick();
   CHECK(!autoMode && allStopped());
 
+  // a bouncy single press only toggles once
+  bouncyY(); CHECK(autoMode);
+  pressY(); CHECK(!autoMode);
   // Y twice toggles back off
   pressY(); CHECK(autoMode);
   pressY(); CHECK(!autoMode);

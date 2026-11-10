@@ -35,6 +35,10 @@ hallway_follower:
     laser_x: 0.0                    # m, LiDAR position from the rover's centre: + = forward of centre
     laser_y: 0.0                    # m, LiDAR position from the rover's centre: + = LEFT of centre, - = right
     fov_deg: 180.0                  # deg, use points within +-fov/2 of ahead (rear blocked by mount)
+    # --- the rover's own body (Nov 9: wheels beside the front-mounted LiDAR showed up at
+    #     +-90 deg, 13-20 cm, and read as 'something in my path' -> always BLOCKED) ---
+    body_front: 0.07                # m, how far the rover sticks out in front of the LiDAR (front-right wheel showed at -66 deg, 12 cm)
+    body_half_width: 0.22           # m, half the rover's full width incl. wheels (+ a little)
     # --- MODE ---
     avoid_obstacles: false          # false = hallway mode: stay centred, drive down the hall, STOP for anything ahead
                                     # true  = also steer around obstacles (the original behaviour)

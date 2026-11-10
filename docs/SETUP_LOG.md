@@ -170,6 +170,11 @@ or the hardware so the team can retrace it.
   (rover angle = 180° − raw). The self mask stays in raw angles, so it's still valid.
   `look` now shows directions as the driving code sees them.
 
+- Nov 9: Y reached the Pi (`ENABLED: driving`) but the rover sat in BLOCKED: the
+  wheels beside the front-mounted LiDAR (±90°, 13–20 cm) counted as "in my path".
+  New `body_front` / `body_half_width` settings drop a box around the rover's own body.
+  Firmware: Y debounced (500 ms) so one press can't toggle twice (reflash needed).
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop

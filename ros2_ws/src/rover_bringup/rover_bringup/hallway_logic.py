@@ -67,6 +67,9 @@ class Params:
     stop_release: float = 0.10      # m, once stopped, path must be this much past stop_dist to go again
     min_obstacle_pts: int = 3       # an obstacle must be at least this many points (drops single-point noise)
     coast_scans: int = 3            # sparse scans in a row to coast through before stopping
+    # --- the rover's own body, in LiDAR coordinates (ignored) ---
+    body_front: float = 0.07        # m, how far the rover sticks out IN FRONT of the LiDAR
+    body_half_width: float = 0.22   # m, half the rover's full width incl. wheels (+ a little)
     # --- mode ---
     avoid_obstacles: bool = False   # False = simple hallway mode: stay centred, go, stop for anything ahead
     # --- remembering which way the hallway goes ---
@@ -343,6 +346,10 @@ class HallwayLogic:
     def _decide_raw(self, pts) -> Decision:
         p = self.p
         pts = self.in_fov(pts)  # field of view is about the LiDAR itself
+        # drop the rover's own body/wheels: a box beside and behind the LiDAR
+        if p.body_half_width > 0.0:
+            pts = [(x, y) for x, y in pts
+                   if not (x <= p.body_front and abs(y) <= p.body_half_width)]
         # From here on, work relative to the rover's CENTRE (not the LiDAR), so
         # centring, clearances and the path corridor are about the rover's body.
         if p.laser_x or p.laser_y:
