@@ -3,8 +3,10 @@
     cd ros2_ws/src/rover_bringup && python3 -m pytest test/test_drive_protocol.py -q
 """
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from rover_bringup.drive_protocol import format_drive_line, parse_status, pick_port  # noqa: E402
@@ -44,12 +46,14 @@ def test_lines_round_trip_through_real_firmware_parser():
       printf("%.3f %.3f %.3f", c.vx, c.vy, c.wz);
       return 0;
     }'''
-    exe = '/tmp/_parse_check'
+    import pytest
+    if not shutil.which('g++'):
+        pytest.skip('no C++ compiler (g++ not on PATH)')
+    exe = os.path.join(tempfile.gettempdir(), '_parse_check' + ('.exe' if os.name == 'nt' else ''))
     r = subprocess.run(['g++', '-std=c++17', '-I', src, '-x', 'c++', '-', '-o', exe],
                        input=prog.encode(), capture_output=True)
     if r.returncode != 0:
-        import pytest
-        pytest.skip('no C++ compiler: ' + r.stderr.decode()[:200])
+        pytest.skip('C++ compile failed: ' + r.stderr.decode()[:200])
     line = format_drive_line(0.2, -0.1, 0.5, 0.5, 0.4, 2.5).rstrip('\n')
     out = subprocess.run([exe, line], capture_output=True, text=True)
     assert out.returncode == 0, line
