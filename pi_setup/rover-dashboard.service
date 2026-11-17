@@ -1,0 +1,29 @@
+# systemd service: the rover web dashboard (http://<pi>:8080), started at boot.
+# Installed by:  bash ~/repos/rpi5-core/pi_setup/rover.sh dashboard   (also run by 'setup')
+# Live log:      journalctl -u rover-dashboard -f
+# Remove:        sudo systemctl disable --now rover-dashboard
+#
+# It only watches and runs rover.sh when you click a button; it never drives by itself.
+
+[Unit]
+Description=Capstone rover web dashboard (port 8080)
+After=network.target
+
+[Service]
+Type=simple
+User=rover
+Environment=ROS_DOMAIN_ID=42
+# camera devices (USB webcam, Pi camera) and the ESP32/LiDAR serial ports
+SupplementaryGroups=video dialout
+Environment=PYTHONUNBUFFERED=1
+Environment=ROVER_DATA=/home/rover/rover_data
+Environment=ROVER_ROOT=/home/rover/repos/rpi5-core
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/rover/repos/rpi5-core/ros2_ws/install/setup.bash && exec python3 -m rover_bringup.rover_dashboard'
+Restart=always
+RestartSec=3
+# restarting the dashboard must not kill a demo it started
+KillMode=process
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

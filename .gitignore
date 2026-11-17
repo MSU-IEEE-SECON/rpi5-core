@@ -29,3 +29,9 @@ fwtest.exe
 
 # logs fetched with rover.ps1 getlog
 demo_*.log
+
+# LiDAR snapshots fetched with rover.ps1 snapshot
+scan_*.json
+
+# code bundles made by tools/make_bundle.py
+deploy/

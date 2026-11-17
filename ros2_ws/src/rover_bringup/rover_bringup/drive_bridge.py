@@ -15,8 +15,11 @@ Speed calibration: max_linear_mps / max_strafe_mps / max_angular_radps are how
 fast the rover goes at FULL power. Measure them (docs/06_drivetrain_link.md) and
 set them in config/drive.yaml.
 """
+import time
+
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, String
@@ -54,7 +57,10 @@ class DriveBridge(Node):
         self.enable_pub = self.create_publisher(Bool, 'rover/enable', ENABLE_QOS)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd, 10)
         rate = float(self.get_parameter('send_rate_hz').value)
-        self.create_timer(1.0 / rate, self.tick)
+        # Steady clock: the Pi has no battery clock, so its system time jumps when it syncs
+        # after boot. A timer on system time stalls after a backwards jump, and the bridge
+        # then never sends or reads anything (Nov 13: "connected", then silence; Y did nothing).
+        self.create_timer(1.0 / rate, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))
 
     # -- serial ---------------------------------------------------------------
     def ensure_open(self):
@@ -157,7 +163,7 @@ class DriveBridge(Node):
             self.enable_pub.publish(Bool(data=(mode == 'AUTO')))
 
     def now_s(self):
-        return self.get_clock().now().nanoseconds * 1e-9
+        return time.monotonic()      # immune to the system clock jumping
 
     def destroy_node(self):
         try:
@@ -170,6 +176,11 @@ class DriveBridge(Node):
 
 
 def main(args=None):
+    # `kill -USR1 <pid>` (rover.sh diag) prints where every thread is, into the demo log
+    import faulthandler
+    import signal
+    import sys
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
     rclpy.init(args=args)
     node = DriveBridge()
     try:

@@ -194,6 +194,13 @@ or the hardware so the team can retrace it.
   new `rover.sh setup` (copies LiDAR driver + settings from the archive, fixes ~/.bashrc, builds).
 - Pi had no DNS/internet (git pull failed) — code copied from the laptop instead.
 
+- Arena tests: `look` + new `snapshot` (raw scans → top-down plot). Found left/right
+  swapped after the upside-down flip → `laser_mirror: false` in `~/rover_data/lidar_calib.json`;
+  visible arc ±85°; end wall 1.15 m, right wall 0.27 m. **The 1.5 in center rail is not
+  seen** (scan plane is above it) → treated as a known virtual obstacle.
+- Lap driver v1: arena localization (wall matching) + Bug2 + pit fence (`.\rover.ps1 lap`).
+  Sim: empty track 16/16 (96 s), with cars ~half. 41 tests.
+
 ### Still to do
 - [x] Flash SD card (Ubuntu Server 24.04 LTS 64-bit), hostname `rover`, user `rover`, SSH on
 - [x] Enable Internet Connection Sharing (Wi-Fi → Ethernet) on the laptop

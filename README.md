@@ -52,6 +52,10 @@ The Actual Bot/
 > The stray `lidar/` folder from the first session is a duplicate of
 > `tools/lidar_identify.py` and can be deleted.
 
+## Everyday use
+
+`.\rover.ps1 deploy`, `.\rover.ps1 start`, `.\rover.ps1 log` ... see `docs/RUNNING_THE_ROVER.md`.
+
 ## Quick start (once the SD card is flashed)
 
 1. Follow `docs/01_flash_sd_card.md` → `docs/02_ethernet_to_pi.md`.

@@ -29,6 +29,10 @@ setup(
             'drive_bridge = rover_bringup.drive_bridge:main',
             'record_self_mask = rover_bringup.record_self_mask:main',
             'calibrate_lidar = rover_bringup.calibrate_lidar:main',
+            'scan_snapshot = rover_bringup.scan_snapshot:main',
+            'lap_driver = rover_bringup.lap_driver:main',
+            'joy_enable = rover_bringup.joy_enable:main',
+            'camera_node = rover_bringup.camera_node:main',
         ],
     },
 )

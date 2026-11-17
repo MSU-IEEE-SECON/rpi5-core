@@ -1,0 +1,25 @@
+# lap_driver settings (arena laps). Distances in metres, speeds m/s.
+# LiDAR direction / view come from ~/rover_data/lidar_calib.json when it exists.
+lap_driver:
+  ros__parameters:
+    laps: 3
+    speed: 0.18              # cruise
+    follow_speed: 0.14       # rolling past a car
+    slow_speed: 0.08         # sidestepping / near corners
+    turn_rate: 1.0           # rad/s, turning at corners
+    half_len: 0.127          # rover body: half length (10 in long, measured Nov 14)
+    half_wid: 0.13           # half width incl. wheels (10 in)
+    clearance: 0.012         # gap kept from cars (lanes are tight)
+    lidar_fwd: 0.102         # LiDAR 1 in from the front = 4 in ahead of the body centre
+    min_range: 0.12
+    log_period_s: 0.5
+    # --- which driver ---
+    planner: path            # path = racing line shifted around cars (smooth); bug2 = old stop-turn-go
+    adapt_speed: true        # learn real speed vs command and scale commands to match
+    # --- racing line (planner: path) ---
+    path_laps: 3
+    path_speed: 0.20         # straights
+    path_corner_speed: 0.12  # rounded corners
+    path_squeeze_speed: 0.09 # when it has to brush past a car
+    path_accel: 0.35         # m/s^2, smooth starts/stops
+    path_car_clear: 0.03     # gap it tries to keep from cars

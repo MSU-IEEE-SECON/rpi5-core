@@ -1,4 +1,4 @@
-# rover.ps1 - control the rover from the laptop (Windows PowerShell).
+# rover.ps1 — control the rover from the laptop (Windows PowerShell).
 #
 # Open PowerShell in this folder (in GitHub Desktop: Repository > Open in Command Prompt / Terminal,
 # or right-click the folder > Open in Terminal), then:
@@ -7,14 +7,17 @@
 #   .\rover.ps1 setup      one time per Pi: LiDAR driver, settings folder, build (after deploy)
 #   .\rover.ps1 deploy     copy this repo's code to the Pi (~/repos/rpi5-core) and rebuild
 #   .\rover.ps1 mask       record the rover's own body (rover in open space!)
-#   .\rover.ps1 start      start the demo (then connect the controller, press Y)
+#   .\rover.ps1 start      start arena laps (same as lap; old hallway demo: .\rover.ps1 hallway)
 #   .\rover.ps1 stop       stop the demo
-#   .\rover.ps1 restart    stop + start (after deploy or mask)
+#   .\rover.ps1 restart    stop + start again in the same mode
+#   .\rover.ps1 lap        stop + start ARENA LAPS (rover in the right lane facing up, press Y)
 #   .\rover.ps1 status     running or not + last log lines
 #   .\rover.ps1 look       20 s of closest thing front/left/back/right (direction check)
 #   .\rover.ps1 calibrate  find the rover's front + usable arc (hold a box up when told)
+#   .\rover.ps1 snapshot   save 2 s of raw LiDAR scans into this folder (for Claude to analyse)
 #   .\rover.ps1 log        watch the log live (Ctrl+C stops watching, NOT the rover)
 #   .\rover.ps1 getlog     copy ~/demo.log from the Pi to this folder (to send to Claude)
+#   .\rover.ps1 dashboard  open the rover's web dashboard in the browser (buttons, live LiDAR, log)
 #   .\rover.ps1 ssh        just log in to the Pi
 #   .\rover.ps1 key        one-time: stop SSH asking for the password every time
 #
@@ -44,21 +47,36 @@ switch ($Action) {
         if ($LASTEXITCODE -ne 0) { Write-Host "Copy failed. Is the Pi on? Try -Pi rover@192.168.137.50" -ForegroundColor Red; exit 1 }
         Write-Host "Rebuilding on the Pi ..." -ForegroundColor Cyan
         ssh $Pi "sed -i 's/\r$//' ~/repos/rpi5-core/pi_setup/*.sh && $remote build"
-        Write-Host "Done. Next: .\rover.ps1 restart   (or .\rover.ps1 mask first)" -ForegroundColor Green
+        Write-Host "Done. Next: .\rover.ps1 lap  (arena laps)  or the dashboard: http://192.168.137.50:8080" -ForegroundColor Green
     }
     "mask"    { ssh $Pi "$remote mask" }
     "start"   { ssh $Pi "$remote start" }
     "stop"    { ssh $Pi "$remote stop" }
     "restart" { ssh $Pi "$remote restart" }
+    "lap"     { ssh $Pi "$remote lap" }
+    "hallway" { ssh $Pi "$remote hallway" }
     "status"  { ssh $Pi "$remote status" }
     "look"    { ssh $Pi "$remote look" }
-    "setup"   { ssh $Pi "sed -i 's/\r$//' ~/repos/rpi5-core/pi_setup/*.sh && $remote setup" }
+    "setup"   { ssh -t $Pi "sed -i 's/\r$//' ~/repos/rpi5-core/pi_setup/*.sh && $remote setup" }
     "calibrate" { ssh $Pi "$remote calibrate" }
+    "snapshot" {
+        ssh $Pi "$remote snapshot"
+        $name = "scan_" + (Get-Date -Format "MMdd_HHmmss") + ".json"
+        scp "${Pi}:~/rover_data/snapshots/latest.json" $name
+        if ($LASTEXITCODE -ne 0) { Write-Host "Could not reach the Pi - nothing saved." -ForegroundColor Red; exit 1 }
+        Write-Host "Saved $name in this folder (send it to Claude)." -ForegroundColor Green
+    }
     "log"     { ssh -t $Pi "$remote log" }
     "getlog"  {
         $name = "demo_" + (Get-Date -Format "MMdd_HHmm") + ".log"
         scp "${Pi}:~/demo.log" $name
+        if ($LASTEXITCODE -ne 0) { Write-Host "Could not reach the Pi - nothing saved." -ForegroundColor Red; exit 1 }
         Write-Host "Saved $name in this folder." -ForegroundColor Green
+    }
+    "dashboard" {
+        $hostName = $Pi.Split("@")[-1]
+        Write-Host "Opening http://${hostName}:8080 (if it doesn't load: .\rover.ps1 setup once, or try -Pi rover@192.168.137.50)" -ForegroundColor Cyan
+        Start-Process "http://${hostName}:8080"
     }
     "ssh"     { ssh $Pi }
     "key" {
@@ -70,5 +88,5 @@ switch ($Action) {
         Get-Content "$key.pub" | ssh $Pi "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
         Write-Host "Done. SSH to the Pi won't ask for the password from this laptop anymore." -ForegroundColor Green
     }
-    default   { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 21 | ForEach-Object { $_ -replace '^# ?', '' } }
+    default   { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 24 | ForEach-Object { $_ -replace '^# ?', '' } }
 }

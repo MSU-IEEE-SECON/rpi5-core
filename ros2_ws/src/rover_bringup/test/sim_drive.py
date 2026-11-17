@@ -33,6 +33,18 @@ COURSES = {
     'hall': (0.8, [], 15.0),
     'wide': (1.4, [], 15.0),
     'doors': (1.2, [], 15.0),
+    # ~10 ft (3.05 m) hallway with benches along the walls and recessed closed doors
+    'real': (1.52, [(2.5, 1.52 - 0.22, 1.8, 0.44),     # bench on the left (1.8 m long, 44 cm deep)
+                    (6.0, -1.52 + 0.22, 1.8, 0.44),    # bench on the right
+                    (9.0, 1.52 - 0.22, 1.2, 0.44),     # short bench left
+                    (9.5, -1.52 + 0.22, 2.4, 0.44),    # long bench right, overlapping
+                    (12.5, 1.52 - 0.04, 0.6, 0.08)],   # trash can / sign on the left
+             16.0),
+}
+# closed doors set back into the wall: course -> [(side, x_start, x_end, depth)]
+RECESSES = {
+    'real': [(+1, 1.0, 1.9, 0.12), (-1, 3.5, 4.4, 0.12), (+1, 4.8, 5.7, 0.12),
+             (-1, 11.0, 11.9, 0.12), (+1, 14.0, 14.9, 0.12)],
 }
 # doorways / side openings: course -> [(side, x_start, x_end)], side +1 = left wall
 DOORS = {
@@ -44,10 +56,15 @@ DOORS = {
 def build(course):
     hw, obstacles, end_x = COURSES[course]
     world = []
+    openings = [(sd, xa, xb, None) for sd, xa, xb in DOORS.get(course, [])]
+    openings += RECESSES.get(course, [])
     for side in (+1, -1):
         x0 = -3.0
-        for sd, xa, xb in sorted(d for d in DOORS.get(course, []) if d[0] == side):
+        for sd, xa, xb, depth in sorted(d for d in openings if d[0] == side):
             world.append((x0, side * hw, xa, side * hw))
+            if depth:  # recessed closed door: little box set back into the wall
+                yb = side * (hw + depth)
+                world += [(xa, side * hw, xa, yb), (xa, yb, xb, yb), (xb, yb, xb, side * hw)]
             x0 = xb
         world.append((x0, side * hw, end_x + 1, side * hw))
     world.append((end_x, -hw, end_x, hw))
