@@ -39,7 +39,9 @@ class PathParams:
     k_pre: float = 1.0             # 1/s: also steer toward the heading the path will have then
     half_len: float = 0.127        # rover body half length: 10 in long (measured Nov 14)
     half_wid: float = 0.13         # rover body half width incl. wheels (10.2 in)
-    wall_clear: float = 0.012      # never closer than this to walls/rail/board/fence
+    wall_clear: float = 0.022      # never closer than this to walls/rail/board/fence. 1.2 cm let
+                                   # the rover graze the wall when a car pushed the plan to the edge;
+                                   # above 2.3 cm the racing line itself breaks it (bottom-right corner)
     heading_tol: float = 0.14      # rad (~8 deg): walls must stay clear even this far off heading
     car_clear: float = 0.03        # wanted gap to cars
     max_offset: float = 0.17       # m sideways from the racing line, either way (walls limit it)
@@ -49,7 +51,8 @@ class PathParams:
     slope: float = 0.8             # max offset change per metre travelled
     w_centre: float = 30.0         # cost of being off the racing line (per m^2)
     w_smooth: float = 2.0          # cost of offset slope (per (m/m)^2)
-    car_cost: float = 1000.0       # cost of a planned point touching a car
+    car_cost: float = 1000.0       # cost of a planned point inside the car_clear margin
+    car_hard_cost: float = 20000.0  # extra cost per 2 cm of body overlapping a car
     laps: int = 3
     lidar_fwd: float = 0.102       # LiDAR 1 in from the front = 4 in ahead of the body centre
     cell: float = 0.01             # obstacle map cell (m)
@@ -126,6 +129,17 @@ def _rect_hits(pts, cx, cy, th, hl, hw):
     bx = rx * c[:, None] + ry * s[:, None]
     by = -rx * s[:, None] + ry * c[:, None]
     return np.any((np.abs(bx) <= hl) & (np.abs(by) <= hw), axis=1)
+
+
+def _rect_overlap(pts, cx, cy, th, hl, hw):
+    """Per pose: how far (m) the deepest of pts reaches sideways into the rectangle, 0 if none."""
+    c, s = np.cos(th), np.sin(th)
+    rx = pts[None, :, 0] - cx[:, None]
+    ry = pts[None, :, 1] - cy[:, None]
+    bx = rx * c[:, None] + ry * s[:, None]
+    by = -rx * s[:, None] + ry * c[:, None]
+    pen = np.where(np.abs(bx) <= hl, hw - np.abs(by), 0.0)
+    return np.clip(pen.max(axis=1), 0.0, None)
 
 
 class PathLap:
@@ -245,6 +259,7 @@ class PathLap:
         ok = self.static_ok[gi]                          # (H, J)
         obs = self.obstacles()
         car = np.zeros_like(ok)
+        depth = np.zeros(ok.shape)      # sideways overlap of the body with a car, in units of 2 cm
         if len(obs):
             idx = self.g_idx[gi]
             th = np.arctan2(self.T[idx, 1], self.T[idx, 0])
@@ -258,7 +273,15 @@ class PathLap:
                     cy = self.P[idx, 1] + d * self.N[idx, 1]
                     car[:, j] = _rect_hits(obs, cx, cy, th, p.half_len + p.car_clear,
                                            p.half_wid + p.car_clear)
-        node = p.w_centre * self.offsets[None, :] ** 2 + np.where(car, p.car_cost, 0.0)
+                    if car[:, j].any():
+                        m = car[:, j]
+                        depth[m, j] = _rect_overlap(obs, cx[m], cy[m], th[m],
+                                                    p.half_len, p.half_wid) / 0.02
+        # a margin-only touch costs car_cost; each 2 cm of real body overlap costs more on top,
+        # so when a car can't be cleared the plan still moves toward its edge (with a flat
+        # cost every touching offset looked equal and the plan drove through the middle)
+        node = (p.w_centre * self.offsets[None, :] ** 2 + np.where(car, p.car_cost, 0.0)
+                + p.car_hard_cost * depth)
         node = np.where(ok, node, np.inf)
         J = len(self.offsets)
         dd = self.offsets[None, :] - self.offsets[:, None]          # (prev, next)

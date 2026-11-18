@@ -30,6 +30,23 @@ def test_plan_shifts_around_a_car_and_back():
     assert abs(d[-1]) < 0.03                         # and back to the line afterwards
 
 
+def test_unavoidable_car_is_skimmed_not_driven_through():
+    """A car too close to the lane centre to clear: the plan must still move toward its
+    edge (least overlap), not stay on the line because every touching offset costs the same."""
+    pl = PL.PathLap()
+    # right lane heading up: + offset = toward the rail (-x). Car 3 cm toward the rail.
+    cx = A.LANE_R - 0.03
+    car = np.array([[x, y] for x in np.arange(cx - 0.045, cx + 0.046, 0.01)
+                    for y in np.arange(1.40, 1.53, 0.01)])
+    pose = (A.LANE_R, 1.00, math.pi / 2)
+    pl.reset(pose)
+    for _ in range(4):
+        pl._remember(car, (A.LANE_R, 1.10))
+    pl.step(pose, car)
+    beside = pl.plan_d[int(0.45 / pl.p.plan_ds)]
+    assert beside < -0.10                            # pressed to the wall side, not ~0
+
+
 def test_speed_gain_learns_fast_motors():
     g = PL.SpeedGain(rate=0.2)
     pose = (0.9, 1.0, math.pi / 2)
