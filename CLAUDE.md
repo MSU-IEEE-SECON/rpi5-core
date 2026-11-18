@@ -21,7 +21,8 @@ Read this first. It is the handoff from the claude.ai project chat
 3. **Do not control Bowen's screen** (no computer use on his desktop).
 4. **SECON Microsoft Teams/SharePoint: read and download only.** Never edit or upload there.
 5. **Ask before downloading files.**
-6. `rpi5-core` must stay **private**. Check the repo's visibility before pushing anything new.
+6. `rpi5-core` is **public** (Bowen confirmed this is OK, Nov 17). Never commit passwords, keys,
+   or files from the SECON Teams/SharePoint. Ask Bowen before pushing.
 7. **After every work session, write an After Action Report** (see "After Action Reports").
 8. Follow Bowen's writing standards for all docs and reports (see "Writing standards").
 
